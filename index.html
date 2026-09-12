@@ -83,14 +83,15 @@ main{padding:1rem;}
   position:fixed; bottom:76px; left:50%; transform:translateX(190px);
   width:48px;height:48px;border-radius:50%;background:var(--rust);color:var(--cream);
   border:none;font-size:1.4rem;cursor:pointer;box-shadow:none;z-index:6;
+  transition:transform 0.2s ease;
 }
 
 .bottomnav{
-  position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
-  display:flex;background:var(--card);z-index:7;
+  position:fixed;bottom:0;left:50%;transform:translate(-50%,0);width:100%;max-width:480px;
+  display:flex;background:var(--card);z-index:7;transition:transform 0.2s ease;
 }
-.navbtn{flex:1;background:none;border:none;color:#9BA0B5;padding:0.55rem 0.2rem 0.5rem;font-family:'IBM Plex Mono',monospace;font-size:0.62rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.15rem;}
-.navbtn .ic{font-size:1.05rem;}
+.navbtn{flex:1;background:none;border:none;color:#9BA0B5;padding:0.5rem 0.1rem 0.45rem;font-family:'IBM Plex Mono',monospace;font-size:0.56rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.15rem;}
+.navbtn .ic{font-size:1rem;}
 .navbtn.active{color:var(--mustard);}
 
 .overlay{position:fixed;inset:0;background:rgba(34,40,59,0.5);display:none;align-items:flex-end;justify-content:center;z-index:20;}
@@ -128,6 +129,10 @@ main{padding:1rem;}
 .disc-item img{width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--line);display:block;}
 .disc-item .t{font-size:0.65rem;margin-top:0.25rem;line-height:1.25;}
 .disc-item .already{position:absolute;top:4px;right:4px;background:var(--teal);color:#fff;font-size:0.55rem;padding:0.1rem 0.3rem;}
+.disc-item .type-badge{position:absolute;top:4px;left:4px;font-size:0.55rem;padding:0.1rem 0.3rem;z-index:1;color:var(--cream);}
+.badge-serie{background:var(--teal);}
+.badge-peli{background:var(--rust);}
+.badge-libro{background:var(--mustard);}
 
 .profile-head{display:flex;align-items:center;gap:0.9rem;margin-bottom:1.3rem;}
 .avatar{width:56px;height:56px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Abril Fatface',serif;font-size:1.4rem;flex-shrink:0;cursor:pointer;}
@@ -156,6 +161,7 @@ main{padding:1rem;}
 <div class="bottomnav" id="bottomnav">
   <button class="navbtn active" data-tab="series"><span class="ic"><i class="ti ti-device-tv"></i></span>Series</button>
   <button class="navbtn" data-tab="pelis"><span class="ic"><i class="ti ti-movie"></i></span>Pelis</button>
+  <button class="navbtn" data-tab="biblioteca"><span class="ic"><i class="ti ti-book"></i></span>Biblioteca</button>
   <button class="navbtn" data-tab="descubrir"><span class="ic"><i class="ti ti-search"></i></span>Descubrir</button>
   <button class="navbtn" data-tab="perfil"><span class="ic"><i class="ti ti-user"></i></span>Perfil</button>
 </div>
@@ -166,12 +172,14 @@ main{padding:1rem;}
 /* ---------------- STORAGE ---------------- */
 let series = [];
 let movies = [];
+let books = [];
 let profile = { name:'Tu perfil', avatar:'' };
 let settings = { tmdbKey:'' };
 
 async function loadAll(){
   try{ const v = localStorage.getItem('fichero_series'); series = v? JSON.parse(v):[]; }catch(e){ series=[]; }
   try{ const v = localStorage.getItem('fichero_movies'); movies = v? JSON.parse(v):[]; }catch(e){ movies=[]; }
+  try{ const v = localStorage.getItem('fichero_books'); books = v? JSON.parse(v):[]; }catch(e){ books=[]; }
   try{ const v = localStorage.getItem('fichero_profile'); profile = v? JSON.parse(v):profile; }catch(e){}
   try{ const v = localStorage.getItem('fichero_settings'); settings = v? JSON.parse(v):settings; }catch(e){}
   recomputeAll();
@@ -179,6 +187,7 @@ async function loadAll(){
 }
 async function saveSeries(){ try{ localStorage.setItem('fichero_series', JSON.stringify(series)); }catch(e){} }
 async function saveMovies(){ try{ localStorage.setItem('fichero_movies', JSON.stringify(movies)); }catch(e){} }
+async function saveBooks(){ try{ localStorage.setItem('fichero_books', JSON.stringify(books)); }catch(e){} }
 async function saveProfile(){ try{ localStorage.setItem('fichero_profile', JSON.stringify(profile)); }catch(e){} }
 async function saveSettings(){ try{ localStorage.setItem('fichero_settings', JSON.stringify(settings)); }catch(e){} }
 
@@ -243,10 +252,59 @@ async function markEpisodeWatched(seriesId, seasonNum, epNum){
   await saveSeries();
   render();
 }
+async function markWatchedThrough(seriesId, seasonNum, epNum){
+  const s = series.find(x=>x.id===seriesId); if(!s) return;
+  const target = flatEpisodes(s).find(e=>e.season_number===seasonNum && e.episode_number===epNum);
+  if(!target) return;
+  const now = Date.now();
+  let offset = 0;
+  flatEpisodes(s).forEach(fe=>{
+    const isTargetOrBefore = (fe.air_date||'').localeCompare(target.air_date||'')<0 ||
+      (fe.season_number<seasonNum) || (fe.season_number===seasonNum && fe.episode_number<=epNum);
+    if(isTargetOrBefore && !fe.watched){
+      const season = s.seasons.find(sn=>sn.season_number===fe.season_number);
+      const ep = season.episodes.find(e=>e.episode_number===fe.episode_number);
+      ep.watched = true; ep.watchedAt = now + offset; offset++;
+    }
+  });
+  clearAllPins();
+  recomputeAll();
+  await saveSeries();
+  render();
+}
+async function unmarkEpisodeWatched(seriesId, seasonNum, epNum){
+  const s = series.find(x=>x.id===seriesId); if(!s) return;
+  const season = s.seasons.find(sn=>sn.season_number===seasonNum); if(!season) return;
+  const ep = season.episodes.find(e=>e.episode_number===epNum); if(!ep) return;
+  ep.watched = false; ep.watchedAt = null;
+  recomputeAll();
+  await saveSeries();
+  render();
+}
+async function markSeasonWatched(seriesId, seasonNum){
+  const s = series.find(x=>x.id===seriesId); if(!s) return;
+  const season = s.seasons.find(sn=>sn.season_number===seasonNum); if(!season) return;
+  const lastEp = season.episodes[season.episodes.length-1];
+  if(!lastEp) return;
+  await markWatchedThrough(seriesId, seasonNum, lastEp.episode_number);
+}
+async function deleteSeries(seriesId){
+  if(!confirm('¿Eliminar esta serie de tu fichero? No se puede deshacer.')) return;
+  series = series.filter(s=>s.id!==seriesId);
+  await saveSeries();
+  closeSheet();
+  render();
+}
 async function markMovieWatched(movieId){
   const m = movies.find(x=>x.id===movieId); if(!m) return;
   m.watched = true; m.watchedAt = Date.now();
   await saveMovies();
+  render();
+}
+async function markBookRead(bookId){
+  const b = books.find(x=>x.id===bookId); if(!b) return;
+  b.watched = true; b.watchedAt = Date.now();
+  await saveBooks();
   render();
 }
 
@@ -302,12 +360,39 @@ async function addMovieFromTmdb(tmdbId){
   await saveMovies();
 }
 
+/* ---------------- GOOGLE BOOKS ---------------- */
+async function gbSearch(q){
+  const res = await fetch('https://www.googleapis.com/books/v1/volumes?q='+encodeURIComponent(q)+'&maxResults=15');
+  if(!res.ok) throw new Error('gb-error');
+  const d = await res.json();
+  return d.items || [];
+}
+async function gbDetail(id){
+  const res = await fetch('https://www.googleapis.com/books/v1/volumes/'+id);
+  if(!res.ok) throw new Error('gb-error');
+  return res.json();
+}
+async function addBookFromGoogle(gbId){
+  if(books.some(b=>b.gbId===gbId)) return;
+  const d = await gbDetail(gbId);
+  const info = d.volumeInfo || {};
+  books.push({
+    id: uid('b_'), gbId, title: info.title||'Sin título',
+    author: (info.authors||[]).join(', '),
+    cover: info.imageLinks? (info.imageLinks.thumbnail||info.imageLinks.smallThumbnail||'').replace('http://','https://') : '',
+    overview: info.description||'', pages: info.pageCount||null,
+    publishedDate: info.publishedDate||'', watched:false, watchedAt:null, addedAt:Date.now()
+  });
+  await saveBooks();
+}
+
 /* ---------------- STATE ---------------- */
 let activeTab = 'series';
 let seriesSub = 'pendientes';
 let pelisSub = 'pendientes';
-let searchQuery = { series:'', pelis:'' };
-let searchOpenTabs = { series:false, pelis:false };
+let bibliotecaSub = 'pendientes';
+let searchQuery = { series:'', pelis:'', biblioteca:'' };
+let searchOpenTabs = { series:false, pelis:false, biblioteca:false };
 let discoverQuery = '';
 let statPeriod = '6m';
 
@@ -335,12 +420,23 @@ function renderTopbar(){
       </div>
       <button class="icon-btn" id="searchOpenBtn"><i class="ti ti-search"></i></button>`}
     </div>`;
+  } else if(activeTab==='biblioteca'){
+    html += `<div class="subtabs-row">
+      ${searchOpenTabs.biblioteca ? `<input id="searchInput" placeholder="Buscar en tu biblioteca…" value="${esc(searchQuery.biblioteca)}"><button class="icon-btn" id="searchClose"><i class="ti ti-x"></i></button>` : `
+      <div class="subtabs">
+        <button class="subtab ${bibliotecaSub==='pendientes'?'active':''}" data-sub="pendientes">Pendientes</button>
+        <button class="subtab ${bibliotecaSub==='leidos'?'active':''}" data-sub="leidos">Leídos</button>
+      </div>
+      <button class="icon-btn" id="searchOpenBtn"><i class="ti ti-search"></i></button>`}
+    </div>`;
   } else if(activeTab==='descubrir'){
     html += `<div class="searchbar"><input id="discInput" placeholder="Buscar series o pelis…" value="${esc(discoverQuery)}"></div>`;
   }
   tb.innerHTML = html;
   document.querySelectorAll('.subtab').forEach(b=>b.addEventListener('click', ()=>{
-    if(activeTab==='series') seriesSub = b.dataset.sub; else pelisSub = b.dataset.sub;
+    if(activeTab==='series') seriesSub = b.dataset.sub;
+    else if(activeTab==='pelis') pelisSub = b.dataset.sub;
+    else if(activeTab==='biblioteca') bibliotecaSub = b.dataset.sub;
     render();
   }));
   const si = document.getElementById('searchInput');
@@ -358,12 +454,13 @@ function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(
 function render(){
   renderTopbar();
   renderMain();
-  document.getElementById('fabAdd').style.display = (activeTab==='series'||activeTab==='pelis') ? 'block':'none';
+  document.getElementById('fabAdd').style.display = (activeTab==='series'||activeTab==='pelis'||activeTab==='biblioteca') ? 'block':'none';
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===activeTab));
 }
 function renderMain(){
   if(activeTab==='series') renderSeriesTab();
   else if(activeTab==='pelis') renderPelisTab();
+  else if(activeTab==='biblioteca') renderBibliotecaTab();
   else if(activeTab==='descubrir') renderDescubrir();
   else renderPerfil();
 }
@@ -401,7 +498,7 @@ function renderSeriesTab(){
     if(sinComenzar.length===0){ html += `<div class="empty">No tienes series sin empezar.</div>`; }
     else html += sinComenzar.map(s=>{ const ep=nextEpisodeOf(s)||flatEpisodes(s)[0]; return ep? epCardHtml(s,ep,'notstarted',false):''; }).join('');
     main.innerHTML = html;
-    main.scrollTop = 0;
+    window.scrollTo(0,0);
     bindEpCards();
   } else if(seriesSub==='estrenos'){
     const all = [];
@@ -410,13 +507,17 @@ function renderSeriesTab(){
     if(all.length===0){ main.innerHTML = `<div class="empty"><b>Sin estrenos</b>Añade series en Descubrir para ver aquí sus próximos capítulos.</div>`; return; }
     let html=''; let lastDate='';
     all.forEach(({s,e})=>{
-      if(e.air_date!==lastDate){ html+=`<div class="date-header">${fmtDate(e.air_date)}</div>`; lastDate=e.air_date; }
+      if(e.air_date!==lastDate){ html+=`<div class="date-header" data-date="${e.air_date||''}">${fmtDate(e.air_date)}</div>`; lastDate=e.air_date; }
       html += epCardHtml(s,e,'',false,false,true);
     });
     main.innerHTML = html;
     bindEpCards();
-    const todayEl = [...main.querySelectorAll('.date-header')].find(h=> h.textContent===fmtDate(todayISO()));
-    if(todayEl) todayEl.scrollIntoView({block:'start'}); else main.scrollTop = main.scrollHeight;
+    setTimeout(()=>{
+      const headers = [...main.querySelectorAll('.date-header')];
+      const upcoming = headers.find(h=> h.dataset.date >= todayISO());
+      if(upcoming) upcoming.scrollIntoView({block:'start'});
+      else if(headers.length) headers[headers.length-1].scrollIntoView({block:'start'});
+    },0);
   } else {
     let list = series.filter(s=>s._status==='finalizada');
     if(q) list = list.filter(s=>s.title.toLowerCase().includes(q));
@@ -461,14 +562,20 @@ function epCardHtml(s, e, cls, isHistory, isPinned, isEstrenos){
       ${showChips ? chipsHtml(s,e) : ''}
     </div>
     ${(!isHistory && !isEstrenos)?`<button class="watch-btn" data-action="watch" title="Marcar como visto"><i class="ti ti-check"></i></button>`:''}
+    ${isHistory?`<button class="watch-btn" data-action="unwatch" title="Marcar como no visto" style="background:transparent;border:1px solid var(--line);color:var(--ink-soft);"><i class="ti ti-x"></i></button>`:''}
   </div>`;
 }
 function bindEpCards(){
   document.querySelectorAll('.ep-card').forEach(c=>{
     c.addEventListener('click', (ev)=>{
-      if(ev.target.dataset.action==='watch'){
+      if(ev.target.closest('[data-action="watch"]')){
         ev.stopPropagation();
-        markEpisodeWatched(c.dataset.sid, parseInt(c.dataset.season), parseInt(c.dataset.ep));
+        markWatchedThrough(c.dataset.sid, parseInt(c.dataset.season), parseInt(c.dataset.ep));
+        return;
+      }
+      if(ev.target.closest('[data-action="unwatch"]')){
+        ev.stopPropagation();
+        unmarkEpisodeWatched(c.dataset.sid, parseInt(c.dataset.season), parseInt(c.dataset.ep));
         return;
       }
       openEpisodeDetail(c.dataset.sid, parseInt(c.dataset.season), parseInt(c.dataset.ep));
@@ -510,19 +617,40 @@ function openEpisodeDetail(sid, seasonNum, epNum){
     <div class="detail-pane" id="pane-info">
       <p>${esc(s.overview)}</p>
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
+      <button class="add-cta" id="deleteSeriesBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar serie</button>
     </div>
     <div class="detail-pane" id="pane-seasons">${seasonsHtml(s)}</div>`;
   openSheet(html);
   const mb = document.getElementById('markWatchedBtn');
-  if(mb) mb.addEventListener('click', ()=>{ markEpisodeWatched(sid, seasonNum, epNum); closeSheet(); });
+  if(mb) mb.addEventListener('click', ()=>{ markWatchedThrough(sid, seasonNum, epNum); closeSheet(); });
+  bindSeasonButtons(sid);
+  const delBtn = document.getElementById('deleteSeriesBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>deleteSeries(sid));
 }
 function seasonsHtml(s){
-  return (s.seasons||[]).map(season=>`
+  return (s.seasons||[]).map(season=>{
+    const allWatched = season.episodes.every(e=>e.watched);
+    return `
     <div class="season-block">
-      <div class="season-title">Temporada ${season.season_number}</div>
+      <div class="season-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Temporada ${season.season_number}</span>
+        ${!allWatched?`<button class="season-watch-btn" data-season="${season.season_number}" style="font-size:0.62rem;font-family:'IBM Plex Mono',monospace;padding:0.3rem 0.5rem;background:var(--ink);color:var(--cream);border:none;cursor:pointer;">Marcar temporada</button>`:''}
+      </div>
       ${season.episodes.map(e=>`<div class="ep-row"><span class="name">E${e.episode_number} ${esc(e.name)}</span>
         <span class="st" style="color:${e.watched?'var(--teal-dark)':'var(--ink-soft)'}">${e.watched?'Vista':fmtDate(e.air_date)}</span></div>`).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+function bindSeasonButtons(sid){
+  document.querySelectorAll('.season-watch-btn').forEach(b=>{
+    b.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      await markSeasonWatched(sid, parseInt(b.dataset.season));
+      const s = series.find(x=>x.id===sid);
+      document.getElementById('pane-seasons').innerHTML = seasonsHtml(s);
+      bindSeasonButtons(sid);
+    });
+  });
 }
 function openSeriesFinalDetail(sid){
   const s = series.find(x=>x.id===sid); if(!s) return;
@@ -536,9 +664,13 @@ function openSeriesFinalDetail(sid){
       <img class="poster-lg" src="${s.poster}">
       <p>${esc(s.overview)}</p>
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
+      <button class="add-cta" id="deleteSeriesBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar serie</button>
     </div>
     <div class="detail-pane" id="pane-seasons">${seasonsHtml(s)}</div>`;
   openSheet(html);
+  bindSeasonButtons(sid);
+  const delBtn = document.getElementById('deleteSeriesBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>deleteSeries(sid));
 }
 
 /* ---------------- PELIS TAB ---------------- */
@@ -582,11 +714,64 @@ function openMovieDetail(mid){
   if(b) b.addEventListener('click', ()=>{ markMovieWatched(mid); closeSheet(); });
 }
 
+/* ---------------- BIBLIOTECA TAB ---------------- */
+function renderBibliotecaTab(){
+  const main = document.getElementById('main');
+  const q = searchQuery.biblioteca.toLowerCase();
+  let list = books.filter(b=> bibliotecaSub==='pendientes'? !b.watched : b.watched);
+  if(q) list = list.filter(b=>b.title.toLowerCase().includes(q));
+  list.sort((a,b)=> bibliotecaSub==='pendientes' ? b.addedAt-a.addedAt : (b.watchedAt||0)-(a.watchedAt||0));
+  if(list.length===0){
+    main.innerHTML = `<div class="empty"><b>${bibliotecaSub==='pendientes'?'Nada pendiente':'Aún no has leído nada'}</b>Añade libros o revistas desde Descubrir o con el botón +.</div>`;
+    return;
+  }
+  main.innerHTML = list.map(b=>`
+    <div class="ep-card" data-bid="${b.id}">
+      <img class="poster" src="${b.cover}" onerror="this.style.background='var(--line)'">
+      <div class="ep-info">
+        <div class="ep-title">${esc(b.title)}</div>
+        <div class="ep-sub">${esc(b.author||'')}</div>
+        <div class="ep-date">${bibliotecaSub==='pendientes' ? (b.publishedDate?'Publicado '+fmtDate(b.publishedDate):'') : 'Leído '+fmtDate(b.watchedAt)}</div>
+      </div>
+      ${bibliotecaSub==='pendientes' ? `<button class="watch-btn" data-action="watch" title="Marcar como leído"><i class="ti ti-check"></i></button>`:''}
+    </div>`).join('');
+  document.querySelectorAll('.ep-card[data-bid]').forEach(c=>{
+    c.addEventListener('click', (ev)=>{
+      if(ev.target.dataset.action==='watch'){ ev.stopPropagation(); markBookRead(c.dataset.bid); return; }
+      openBookDetail(c.dataset.bid);
+    });
+  });
+}
+function openBookDetail(bid){
+  const b = books.find(x=>x.id===bid); if(!b) return;
+  const html = `<button class="sheet-close">&times;</button>
+    <h2>${esc(b.title)}</h2>
+    <div class="sheet-sub">${esc(b.author||'')}${b.pages?' · '+b.pages+' páginas':''}</div>
+    <img class="poster-lg" src="${b.cover}">
+    <p style="font-size:0.8rem;line-height:1.6;color:var(--ink-soft);">${esc(b.overview)||'Sin sinopsis.'}</p>
+    ${!b.watched? `<button class="add-cta" id="bkWatchBtn">Marcar como leído</button>` : `<p style="font-size:0.75rem;color:var(--teal-dark);margin-top:0.6rem;">Leído el ${fmtDate(b.watchedAt)}</p>`}`;
+  openSheet(html);
+  const btn = document.getElementById('bkWatchBtn');
+  if(btn) btn.addEventListener('click', ()=>{ markBookRead(bid); closeSheet(); });
+}
+
 /* ---------------- DESCUBRIR TAB ---------------- */
 async function renderDescubrir(){
   const main = document.getElementById('main');
+  if(discoverQuery.trim().length>1){
+    main.innerHTML = `<div class="loading">Buscando…</div>`;
+    let items = [];
+    if(settings.tmdbKey){
+      try{ const r = await tmdbSearchMulti(discoverQuery.trim()); items = items.concat(r.map(normTmdb)); }catch(e){}
+    }
+    try{ const gb = await gbSearch(discoverQuery.trim()); items = items.concat(gb.map(normBook)); }catch(e){}
+    if(items.length===0){ main.innerHTML = `<div class="empty">Sin resultados. ${!settings.tmdbKey?'Añade tu clave TMDB en Perfil para incluir series y pelis.':''}</div>`; return; }
+    main.innerHTML = `<div class="section-label">Resultados</div><div class="disc-grid">${items.map(discItemHtml).join('')}</div>`;
+    bindDiscItems();
+    return;
+  }
   if(!settings.tmdbKey){
-    main.innerHTML = `<div class="empty"><b>Falta una clave de TMDB</b>Para buscar y descubrir series y pelis necesitas una clave gratuita de themoviedb.org.
+    main.innerHTML = `<div class="empty"><b>Falta una clave de TMDB</b>Para ver recomendaciones de series y pelis necesitas una clave gratuita de themoviedb.org. Puedes buscar libros y revistas igualmente con la lupa.
       <div style="margin-top:0.8rem;"><input id="tmdbKeyInput" placeholder="Pega aquí tu API key" style="width:100%;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;padding:0.5rem 0.6rem;border:1px solid var(--line);background:var(--card);color:var(--ink);"></div>
       <button class="add-cta" id="saveKeyBtn">Guardar clave</button></div>`;
     document.getElementById('saveKeyBtn').addEventListener('click', async ()=>{
@@ -596,37 +781,41 @@ async function renderDescubrir(){
     });
     return;
   }
-  if(discoverQuery.trim().length>1){
-    main.innerHTML = `<div class="loading">Buscando…</div>`;
-    try{
-      const results = await tmdbSearchMulti(discoverQuery.trim());
-      main.innerHTML = `<div class="section-label">Resultados</div><div class="disc-grid">${results.map(discItemHtml).join('')}</div>`;
-      bindDiscItems(results);
-    }catch(e){ main.innerHTML = `<div class="empty">No se pudo buscar. Comprueba tu clave TMDB.</div>`; }
-    return;
-  }
   main.innerHTML = `<div class="loading">Cargando recomendaciones…</div>`;
   try{
     const [popTv, popMv, onAir] = await Promise.all([tmdbPopular('tv'), tmdbPopular('movie'), tmdbOnAir()]);
-    let html = `<div class="section-label">Series populares</div><div class="disc-grid">${popTv.slice(0,9).map(discItemHtml).join('')}</div>`;
-    html += `<div class="section-label">Pelis populares</div><div class="disc-grid">${popMv.slice(0,9).map(discItemHtml).join('')}</div>`;
-    html += `<div class="section-label">Series en emisión ahora</div><div class="disc-grid">${onAir.slice(0,9).map(discItemHtml).join('')}</div>`;
+    let html = `<div class="section-label">Series populares</div><div class="disc-grid">${popTv.slice(0,9).map(normTmdb).map(discItemHtml).join('')}</div>`;
+    html += `<div class="section-label">Pelis populares</div><div class="disc-grid">${popMv.slice(0,9).map(normTmdb).map(discItemHtml).join('')}</div>`;
+    html += `<div class="section-label">Series en emisión ahora</div><div class="disc-grid">${onAir.slice(0,9).map(normTmdb).map(discItemHtml).join('')}</div>`;
     main.innerHTML = html;
-    bindDiscItems([...popTv,...popMv,...onAir]);
+    bindDiscItems();
   }catch(e){ main.innerHTML = `<div class="empty">No se pudieron cargar recomendaciones. Revisa tu clave TMDB.</div>`; }
 }
-function discItemHtml(r){
+function normTmdb(r){
   const type = r.media_type || (r.title? 'movie':'tv');
-  const title = r.title || r.name;
-  const already = type==='tv' ? series.some(s=>s.tmdbId===r.id) : movies.some(m=>m.tmdbId===r.id);
-  return `<div class="disc-item" data-id="${r.id}" data-type="${type}">
-    ${already?'<span class="already">En tu lista</span>':''}
-    <img src="${r.poster_path? IMG+r.poster_path:''}" onerror="this.style.background='var(--line)'">
-    <div class="t">${esc(title)}</div></div>`;
+  return { id:r.id, type, title:r.title||r.name, poster: r.poster_path? IMG+r.poster_path:'' };
 }
-function bindDiscItems(results){
+function normBook(item){
+  const info = item.volumeInfo || {};
+  const cover = info.imageLinks? (info.imageLinks.thumbnail||info.imageLinks.smallThumbnail||'').replace('http://','https://') : '';
+  return { id:item.id, type:'book', title:info.title||'Sin título', poster:cover };
+}
+const TYPE_BADGE = { tv:{label:'SERIE', cls:'badge-serie'}, movie:{label:'PELI', cls:'badge-peli'}, book:{label:'LIBRO', cls:'badge-libro'} };
+function discItemHtml(item){
+  const already = item.type==='tv' ? series.some(s=>s.tmdbId===item.id)
+    : item.type==='movie' ? movies.some(m=>m.tmdbId===item.id)
+    : books.some(b=>b.gbId===item.id);
+  const badge = TYPE_BADGE[item.type];
+  return `<div class="disc-item" data-id="${item.id}" data-type="${item.type}">
+    <span class="type-badge ${badge.cls}">${badge.label}</span>
+    ${already?'<span class="already">En tu lista</span>':''}
+    <img src="${item.poster}" onerror="this.style.background='var(--line)'">
+    <div class="t">${esc(item.title)}</div></div>`;
+}
+function bindDiscItems(){
   document.querySelectorAll('.disc-item').forEach(el=>{
-    el.addEventListener('click', ()=> openDiscoverDetail(parseInt(el.dataset.id), el.dataset.type));
+    const id = el.dataset.type==='book' ? el.dataset.id : parseInt(el.dataset.id);
+    el.addEventListener('click', ()=> openDiscoverDetail(id, el.dataset.type));
   });
 }
 async function openDiscoverDetail(id, type){
@@ -657,7 +846,7 @@ async function openDiscoverDetail(id, type){
         await addSeriesFromTmdb(id); recomputeAll();
         btn.textContent='Añadida'; btn.classList.add('added');
       });
-    } else {
+    } else if(type==='movie'){
       const d = await tmdbMovieDetail(id);
       const already = movies.some(m=>m.tmdbId===id);
       const html = `<button class="sheet-close">&times;</button>
@@ -672,6 +861,24 @@ async function openDiscoverDetail(id, type){
       if(btn && !already) btn.addEventListener('click', async ()=>{
         btn.textContent='Añadiendo…'; btn.disabled=true;
         await addMovieFromTmdb(id);
+        btn.textContent='Añadida'; btn.classList.add('added');
+      });
+    } else {
+      const d = await gbDetail(id);
+      const info = d.volumeInfo || {};
+      const already = books.some(b=>b.gbId===id);
+      const cover = info.imageLinks? (info.imageLinks.thumbnail||info.imageLinks.smallThumbnail||'').replace('http://','https://') : '';
+      const html = `<button class="sheet-close">&times;</button>
+        <h2>${esc(info.title||'')}</h2>
+        <div class="sheet-sub">${esc((info.authors||[]).join(', '))}${info.pageCount?' · '+info.pageCount+' páginas':''}</div>
+        <img class="poster-lg" src="${cover}">
+        <p style="font-size:0.8rem;line-height:1.6;color:var(--ink-soft);">${esc((info.description||'').replace(/<[^>]+>/g,''))||'Sin sinopsis.'}</p>
+        <button class="add-cta ${already?'added':''}" id="discAddBtn" ${already?'disabled':''}>${already?'Ya en tu lista':'Añadir a pendientes'}</button>`;
+      openSheet(html);
+      const btn = document.getElementById('discAddBtn');
+      if(btn && !already) btn.addEventListener('click', async ()=>{
+        btn.textContent='Añadiendo…'; btn.disabled=true;
+        await addBookFromGoogle(id);
         btn.textContent='Añadida'; btn.classList.add('added');
       });
     }
@@ -715,6 +922,7 @@ function renderPerfil(){
 
   const totalSeries = series.length, curso = series.filter(s=>s._status==='en_curso').length, sinComenzar = series.filter(s=>s._status==='sin_comenzar').length, fin = series.filter(s=>s._status==='finalizada').length;
   const totalMovies = movies.length, movVistas = movies.filter(m=>m.watched).length, movPend = totalMovies-movVistas;
+  const totalBooks = books.length, bookLeidos = books.filter(b=>b.watched).length, bookPend = totalBooks-bookLeidos;
 
   const weekdayCounts=[0,0,0,0,0,0,0];
   const hourBuckets={Mañana:0,Tarde:0,Noche:0,Madrugada:0};
@@ -743,6 +951,7 @@ function renderPerfil(){
 
   html += `<div class="stat-card"><div class="label">Series</div><div class="value">${totalSeries}</div><div class="subvalue">${curso} en curso · ${sinComenzar} sin comenzar · ${fin} finalizadas</div></div>`;
   html += `<div class="stat-card"><div class="label">Pelis</div><div class="value">${totalMovies}</div><div class="subvalue">${movVistas} vistas · ${movPend} pendientes</div></div>`;
+  html += `<div class="stat-card"><div class="label">Biblioteca</div><div class="value">${totalBooks}</div><div class="subvalue">${bookLeidos} leídos · ${bookPend} pendientes</div></div>`;
   html += `<div class="stat-card"><div class="label">Horas vistas (${PERIOD_LABELS[statPeriod].toLowerCase()})</div><div class="value">${totalHours} h</div><div class="subvalue">${events.length} capítulos/pelis</div></div>`;
 
   html += `<div class="stat-card"><div class="label">Día de la semana</div>`;
@@ -759,10 +968,50 @@ function renderPerfil(){
     html += `<div class="stat-card">` + forecasts.map(({s,f})=>`<div class="forecast-item"><b>${esc(s.title)}</b><br>${fmtDays(f.days)} · quedan ${f.episodesRemaining} capítulos</div>`).join('') + `</div>`;
   }
 
+  html += `<div class="section-label">Copia de seguridad</div>`;
+  html += `<div class="stat-card">
+    <div class="subvalue" style="margin-bottom:0.6rem;">Descarga tus datos para pasarlos a otro móvil, o carga una copia anterior.</div>
+    <button class="add-cta" id="exportBtn" style="margin-top:0;">Exportar datos</button>
+    <button class="add-cta" id="importBtn" style="margin-top:0.5rem;background:transparent;border:1px solid var(--ink);color:var(--ink);">Importar datos</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none;">
+  </div>`;
+
   main.innerHTML = html;
   document.querySelectorAll('.period-chip').forEach(b=>b.addEventListener('click', ()=>{ statPeriod=b.dataset.p; renderPerfil(); }));
   document.getElementById('avatarBtn').addEventListener('click', editProfile);
   document.getElementById('nameBtn').addEventListener('click', editProfile);
+  document.getElementById('exportBtn').addEventListener('click', exportData);
+  document.getElementById('importBtn').addEventListener('click', ()=>document.getElementById('importFile').click());
+  document.getElementById('importFile').addEventListener('change', importData);
+}
+function exportData(){
+  const payload = { series, movies, books, profile, settings, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'fichero-datos-'+todayISO()+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function importData(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      if(!confirm('Esto sustituirá todos tus datos actuales por los del archivo. ¿Continuar?')) return;
+      series = data.series || [];
+      movies = data.movies || [];
+      books = data.books || [];
+      profile = data.profile || profile;
+      settings = data.settings || settings;
+      recomputeAll();
+      await saveSeries(); await saveMovies(); await saveBooks(); await saveProfile(); await saveSettings();
+      render();
+    }catch(e){ alert('No se pudo leer el archivo. Comprueba que es una copia exportada desde Fichero.'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
 }
 function editProfile(){
   const html = `<button class="sheet-close">&times;</button>
@@ -815,6 +1064,16 @@ function openManualAdd(){
 document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click', ()=>{ activeTab=b.dataset.tab; render(); }));
 document.getElementById('fabAdd').addEventListener('click', openManualAdd);
 document.getElementById('overlay').addEventListener('click', (ev)=>{ if(ev.target.id==='overlay') closeSheet(); });
+
+let lastScrollY = 0;
+window.addEventListener('scroll', ()=>{
+  const y = window.scrollY;
+  const nav = document.getElementById('bottomnav');
+  const fab = document.getElementById('fabAdd');
+  if(y > lastScrollY && y > 40){ nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)'; }
+  else { nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; }
+  lastScrollY = y;
+}, { passive:true });
 
 loadAll();
 if('serviceWorker' in navigator){
