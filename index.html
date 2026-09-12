@@ -26,7 +26,7 @@ body{
 h1,h2,h3{font-family:'Abril Fatface',serif; font-weight:500; margin:0;}
 .topbar{
   position:sticky; top:0; z-index:5; background:var(--cream);
-  padding:0.9rem 1rem 0.6rem;
+  padding:0.9rem 1rem 0.6rem; transition:transform 0.2s ease;
 }
 .topbar-row{display:flex; align-items:center; justify-content:space-between; gap:0.6rem;}
 .topbar h1{font-size:1.5rem;}
@@ -71,7 +71,7 @@ main{padding:1rem;}
 }
 .watch-btn:hover{background:var(--teal-dark);}
 
-.date-header{font-size:0.72rem;font-weight:500;color:var(--ink);background:var(--cream);position:sticky;top:0;padding:0.3rem 0;margin-top:0.8rem;border-bottom:1px solid var(--line);}
+.date-header{font-size:1rem;font-family:'Abril Fatface',serif;color:var(--ink);background:var(--cream);position:sticky;top:0;padding:0.4rem 0;margin-top:0.9rem;border-bottom:1px solid var(--line);}
 
 .fin-card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--rust);padding:0.7rem 0.8rem;margin-bottom:0.55rem;display:flex;gap:0.7rem;cursor:pointer;}
 .fin-card.hasfuture{border-left-color:var(--blue);}
@@ -90,7 +90,8 @@ main{padding:1rem;}
   position:fixed;bottom:0;left:50%;transform:translate(-50%,0);width:100%;max-width:480px;
   display:flex;background:var(--card);z-index:7;transition:transform 0.2s ease;
 }
-.navbtn{flex:1;background:none;border:none;color:#9BA0B5;padding:0.5rem 0.1rem 0.45rem;font-family:'IBM Plex Mono',monospace;font-size:0.56rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.15rem;}
+.navbtn{flex:1;background:none;border:none;color:#9BA0B5;padding:0.5rem 0.1rem 0.45rem;font-family:'IBM Plex Mono',monospace;font-size:0.56rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.15rem;outline:none;-webkit-tap-highlight-color:transparent;}
+.navbtn:focus, .navbtn:active{outline:none;background:none;}
 .navbtn .ic{font-size:1rem;}
 .navbtn.active{color:var(--mustard);}
 
@@ -197,6 +198,20 @@ async function saveSettings(){ try{ localStorage.setItem('fichero_settings', JSO
 const todayISO = () => new Date().toISOString().slice(0,10);
 function uid(p){ return p+Date.now()+Math.random().toString(36).slice(2,7); }
 function fmtDate(d){ if(!d) return ''; const dt=new Date(d); return dt.toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtRelativeDate(d){
+  if(!d) return '';
+  const dt = new Date(d+'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diffDays = Math.round((dt-today)/86400000);
+  if(diffDays===0) return 'Hoy';
+  if(diffDays===1) return 'Mañana';
+  if(diffDays===-1) return 'Ayer';
+  if(diffDays>1 && diffDays<=7){
+    const w = dt.toLocaleDateString('es-ES',{weekday:'long'});
+    return w.charAt(0).toUpperCase()+w.slice(1);
+  }
+  return fmtDate(d);
+}
 function fmtDateTime(ts){ const dt=new Date(ts); return dt.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})+' · '+dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
@@ -294,7 +309,6 @@ async function markSeasonWatched(seriesId, seasonNum){
   await markWatchedThrough(seriesId, seasonNum, lastEp.episode_number);
 }
 async function deleteSeries(seriesId){
-  if(!confirm('¿Eliminar esta serie de tu fichero? No se puede deshacer.')) return;
   series = series.filter(s=>s.id!==seriesId);
   await saveSeries();
   closeSheet();
@@ -517,7 +531,7 @@ function renderSeriesTab(){
     if(all.length===0){ main.innerHTML = `<div class="empty"><b>Sin estrenos</b>Añade series en Descubrir para ver aquí sus próximos capítulos.</div>`; return; }
     let html=''; let lastDate='';
     all.forEach(({s,e})=>{
-      if(e.air_date!==lastDate){ html+=`<div class="date-header" data-date="${e.air_date||''}">${fmtDate(e.air_date)}</div>`; lastDate=e.air_date; }
+      if(e.air_date!==lastDate){ html+=`<div class="date-header" data-date="${e.air_date||''}">${fmtRelativeDate(e.air_date)}</div>`; lastDate=e.air_date; }
       html += epCardHtml(s,e,'',false,false,true);
     });
     main.innerHTML = html;
@@ -545,20 +559,14 @@ function renderSeriesTab(){
   }
 }
 function remainingChips(s, ep){
-  const season = s.seasons.find(sn=>sn.season_number===ep.season_number);
-  const remInSeason = season ? season.episodes.filter(e=>e.episode_number>=ep.episode_number && !e.watched).length : 0;
-  const laterSeasons = (s.seasons||[]).filter(sn=>sn.season_number>ep.season_number);
-  const laterEpisodes = laterSeasons.reduce((a,sn)=>a+sn.episodes.length,0);
-  return {seasonNum:ep.season_number, remInSeason, laterSeasonsCount:laterSeasons.length, laterEpisodes};
+  const total = flatEpisodes(s).filter(e=>
+    e.episode_number>=ep.episode_number && e.season_number===ep.season_number || e.season_number>ep.season_number
+  ).filter(e=>!e.watched).length;
+  return {total};
 }
 function chipsHtml(s, e){
   const c = remainingChips(s, e);
-  let html = `<div class="chip-row"><span class="chip chip-gold">T${c.seasonNum}: ${c.remInSeason} capítulos</span>`;
-  if(c.laterSeasonsCount>0){
-    html += `<span class="chip chip-outline">${c.laterSeasonsCount} temporada${c.laterSeasonsCount>1?'s':''} · ${c.laterEpisodes} capítulos</span>`;
-  }
-  html += `</div>`;
-  return html;
+  return `<div class="chip-row"><span class="chip chip-gold">${c.total} capítulo${c.total===1?'':'s'} restante${c.total===1?'':'s'}</span></div>`;
 }
 function epCardHtml(s, e, cls, isHistory, isPinned, isEstrenos){
   const showChips = !isHistory && !isEstrenos;
@@ -626,6 +634,7 @@ function openEpisodeDetail(sid, seasonNum, epNum){
     </div>
     <div class="detail-pane" id="pane-info">
       <p>${esc(s.overview)}</p>
+      ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <button class="add-cta" id="deleteSeriesBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar serie</button>
     </div>
@@ -699,6 +708,7 @@ function openSeriesFinalDetail(sid){
     <div class="detail-pane active" id="pane-info">
       <img class="poster-lg" src="${s.poster}">
       <p>${esc(s.overview)}</p>
+      ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <button class="add-cta" id="deleteSeriesBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar serie</button>
     </div>
@@ -802,7 +812,13 @@ async function renderDescubrir(){
     }
     try{ const gb = await gbSearch(discoverQuery.trim()); items = items.concat(gb.map(normBook)); }catch(e){}
     if(items.length===0){ main.innerHTML = `<div class="empty">Sin resultados. ${!settings.tmdbKey?'Añade tu clave TMDB en Perfil para incluir series y pelis.':''}</div>`; return; }
-    main.innerHTML = `<div class="section-label">Resultados</div><div class="disc-grid">${items.map(discItemHtml).join('')}</div>`;
+    items = sortByMatch(items, discoverQuery.trim());
+    const exact = items.filter(i=>i._matchScore===0);
+    const rest = items.filter(i=>i._matchScore>0);
+    let html = '';
+    if(exact.length) html += `<div class="section-label">Coincidencias</div><div class="disc-grid">${exact.map(discItemHtml).join('')}</div>`;
+    if(rest.length) html += `<div class="section-label">Títulos similares</div><div class="disc-grid">${rest.map(discItemHtml).join('')}</div>`;
+    main.innerHTML = html;
     bindDiscItems();
     return;
   }
@@ -831,6 +847,19 @@ function normTmdb(r){
   const type = r.media_type || (r.title? 'movie':'tv');
   return { id:r.id, type, title:r.title||r.name, poster: r.poster_path? IMG+r.poster_path:'' };
 }
+function sortByMatch(items, query){
+  const q = query.trim().toLowerCase();
+  const scored = items.map((item, idx)=>{
+    const t = (item.title||'').trim().toLowerCase();
+    let score = 3;
+    if(t===q) score = 0;
+    else if(t.startsWith(q)) score = 1;
+    else if(t.includes(q)) score = 2;
+    return Object.assign({}, item, {_matchScore:score, _origIdx:idx});
+  });
+  scored.sort((a,b)=> a._matchScore-b._matchScore || a._origIdx-b._origIdx);
+  return scored;
+}
 function normBook(item){
   const info = item.volumeInfo || {};
   const cover = info.imageLinks? (info.imageLinks.thumbnail||info.imageLinks.smallThumbnail||'').replace('http://','https://') : '';
@@ -854,6 +883,11 @@ function bindDiscItems(){
     el.addEventListener('click', ()=> openDiscoverDetail(id, el.dataset.type));
   });
 }
+const STATUS_ES = {
+  'Ended':'Finalizada', 'Returning Series':'En emisión', 'Canceled':'Cancelada',
+  'In Production':'En producción', 'Planned':'Planeada', 'Pilot':'Piloto'
+};
+function statusEs(s){ return STATUS_ES[s] || s || ''; }
 async function openDiscoverDetail(id, type){
   openSheet(`<div class="loading">Cargando…</div>`);
   try{
@@ -862,18 +896,24 @@ async function openDiscoverDetail(id, type){
       const already = series.some(s=>s.tmdbId===id);
       const html = `<button class="sheet-close">&times;</button>
         <h2>${esc(d.name)}</h2>
-        <div class="sheet-sub">${d.first_air_date? fmtDate(d.first_air_date):''} · ${d.status||''}</div>
+        <div class="sheet-sub">${d.first_air_date? fmtDate(d.first_air_date):''} · ${statusEs(d.status)}</div>
         <div class="detail-tabs">
           <button class="detail-tab active" data-p="info">Detalles</button>
-          <button class="detail-tab" data-p="cast">Reparto</button>
+          <button class="detail-tab" data-p="extra">${EXTRA_TAB_LABEL}</button>
           <button class="detail-tab" data-p="seasons">Temporadas</button>
         </div>
         <div class="detail-pane active" id="pane-info">
           <img class="poster-lg" src="${d.poster_path?IMG+d.poster_path:''}">
           <p>${esc(d.overview)||'Sin sinopsis.'}</p>
         </div>
-        <div class="detail-pane" id="pane-cast">${(d.credits?.cast||[]).slice(0,10).map(c=>esc(c.name+' · '+c.character)).join('<br>')}</div>
-        <div class="detail-pane" id="pane-seasons">${(d.seasons||[]).filter(s=>s.season_number>0).map(s=>`<div class="season-block"><div class="season-title">Temporada ${s.season_number}</div><p style="font-size:0.75rem;color:var(--ink-soft);">${s.episode_count} capítulos</p></div>`).join('')}</div>
+        <div class="detail-pane" id="pane-extra">
+          <div class="section-label" style="margin-top:0;">¿Dónde se puede ver?</div>
+          <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">Cargando…</p></div>
+          <div class="section-label">Reparto</div>
+          <p style="font-size:0.8rem;color:var(--ink-soft);">${(d.credits?.cast||[]).slice(0,10).map(c=>esc(c.name+' · '+c.character)).join('<br>')}</p>
+          <div id="similarBlock"></div>
+        </div>
+        <div class="detail-pane" id="pane-seasons"><p style="font-size:0.75rem;color:var(--ink-soft);">Cargando episodios…</p></div>
         <button class="add-cta ${already?'added':''}" id="discAddBtn" ${already?'disabled':''}>${already?'Ya en tu lista':'Añadir a pendientes'}</button>`;
       openSheet(html);
       const btn = document.getElementById('discAddBtn');
@@ -882,15 +922,30 @@ async function openDiscoverDetail(id, type){
         await addSeriesFromTmdb(id); recomputeAll();
         btn.textContent='Añadida'; btn.classList.add('added');
       });
+      loadProviders('tv', id);
+      loadRecommendations((d.genres&&d.genres[0]&&d.genres[0].name)||d.name, 'tv', id);
+      loadDiscSeasons(id, (d.seasons||[]).filter(s=>s.season_number>0));
     } else if(type==='movie'){
       const d = await tmdbMovieDetail(id);
       const already = movies.some(m=>m.tmdbId===id);
       const html = `<button class="sheet-close">&times;</button>
         <h2>${esc(d.title)}</h2>
         <div class="sheet-sub">${fmtDate(d.release_date)} · ${d.runtime||'?'} min</div>
-        <img class="poster-lg" src="${d.poster_path?IMG+d.poster_path:''}">
-        <p style="font-size:0.8rem;line-height:1.6;color:var(--ink-soft);">${esc(d.overview)||'Sin sinopsis.'}</p>
-        <p style="margin-top:0.6rem;font-size:0.8rem;"><b style="color:var(--ink);">Reparto:</b><br>${(d.credits?.cast||[]).slice(0,8).map(c=>esc(c.name+' · '+c.character)).join('<br>')}</p>
+        <div class="detail-tabs">
+          <button class="detail-tab active" data-p="info">Detalles</button>
+          <button class="detail-tab" data-p="extra">${EXTRA_TAB_LABEL}</button>
+        </div>
+        <div class="detail-pane active" id="pane-info">
+          <img class="poster-lg" src="${d.poster_path?IMG+d.poster_path:''}">
+          <p style="font-size:0.8rem;line-height:1.6;color:var(--ink-soft);">${esc(d.overview)||'Sin sinopsis.'}</p>
+        </div>
+        <div class="detail-pane" id="pane-extra">
+          <div class="section-label" style="margin-top:0;">¿Dónde se puede ver?</div>
+          <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">Cargando…</p></div>
+          <div class="section-label">Reparto</div>
+          <p style="font-size:0.8rem;color:var(--ink-soft);">${(d.credits?.cast||[]).slice(0,8).map(c=>esc(c.name+' · '+c.character)).join('<br>')}</p>
+          <div id="similarBlock"></div>
+        </div>
         <button class="add-cta ${already?'added':''}" id="discAddBtn" ${already?'disabled':''}>${already?'Ya en tu lista':'Añadir a pendientes'}</button>`;
       openSheet(html);
       const btn = document.getElementById('discAddBtn');
@@ -899,6 +954,8 @@ async function openDiscoverDetail(id, type){
         await addMovieFromTmdb(id);
         btn.textContent='Añadida'; btn.classList.add('added');
       });
+      loadProviders('movie', id);
+      loadRecommendations((d.genres&&d.genres[0]&&d.genres[0].name)||d.title, 'movie', id);
     } else {
       const d = await gbDetail(id);
       const info = d.volumeInfo || {};
@@ -909,7 +966,8 @@ async function openDiscoverDetail(id, type){
         <div class="sheet-sub">${esc((info.authors||[]).join(', '))}${info.pageCount?' · '+info.pageCount+' páginas':''}</div>
         <img class="poster-lg" src="${cover}">
         <p style="font-size:0.8rem;line-height:1.6;color:var(--ink-soft);">${esc((info.description||'').replace(/<[^>]+>/g,''))||'Sin sinopsis.'}</p>
-        <button class="add-cta ${already?'added':''}" id="discAddBtn" ${already?'disabled':''}>${already?'Ya en tu lista':'Añadir a pendientes'}</button>`;
+        <button class="add-cta ${already?'added':''}" id="discAddBtn" ${already?'disabled':''}>${already?'Ya en tu lista':'Añadir a pendientes'}</button>
+        <div id="similarBlock"></div>`;
       openSheet(html);
       const btn = document.getElementById('discAddBtn');
       if(btn && !already) btn.addEventListener('click', async ()=>{
@@ -917,8 +975,60 @@ async function openDiscoverDetail(id, type){
         await addBookFromGoogle(id);
         btn.textContent='Añadida'; btn.classList.add('added');
       });
+      loadRecommendations((info.categories&&info.categories[0])||(info.authors&&info.authors[0])||info.title, 'book', id);
     }
   }catch(e){ document.getElementById('sheetContent').innerHTML = `<button class="sheet-close">&times;</button><p>No se pudo cargar la ficha.</p>`; bindSheetCommon(); }
+}
+async function loadDiscSeasons(tmdbId, seasons){
+  const pane = document.getElementById('pane-seasons'); if(!pane) return;
+  try{
+    const details = await Promise.all(seasons.map(s=>tmdbSeason(tmdbId, s.season_number)));
+    pane.innerHTML = details.map(sd=>`
+      <div class="season-block">
+        <div class="season-title">Temporada ${sd.season_number}</div>
+        ${(sd.episodes||[]).map(e=>`<div class="ep-row"><span class="name">E${e.episode_number} ${esc(e.name)}</span><span class="st">${fmtDate(e.air_date)}</span></div>`).join('')}
+      </div>`).join('');
+  }catch(e){ pane.innerHTML = `<p style="font-size:0.75rem;color:var(--ink-soft);">No se pudieron cargar los episodios.</p>`; }
+}
+async function loadProviders(type, id){
+  const block = document.getElementById('providersBlock'); if(!block) return;
+  try{
+    const p = await tmdbProviders(type, id);
+    block.innerHTML = providersHtml(p);
+  }catch(e){ block.innerHTML = `<p style="font-size:0.75rem;color:var(--ink-soft);">Sin datos de disponibilidad.</p>`; }
+}
+async function tmdbProviders(type, id){
+  const d = await tmdb(type+'/'+id+'/watch/providers', {});
+  return (d.results && d.results.ES) || null;
+}
+function providersHtml(p){
+  if(!p) return `<p style="font-size:0.75rem;color:var(--ink-soft);">Sin datos de disponibilidad para España.</p>`;
+  const group = p.flatrate || p.ads || p.rent || p.buy;
+  const label = p.flatrate?'En streaming':p.ads?'Gratis con anuncios':p.rent?'De alquiler':p.buy?'De compra':'';
+  if(!group || group.length===0) return `<p style="font-size:0.75rem;color:var(--ink-soft);">No disponible actualmente en España.</p>`;
+  return `<p style="font-size:0.68rem;color:var(--ink-soft);margin-bottom:0.4rem;">${label}</p>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">${group.map(pr=>`
+      <div style="text-align:center;width:44px;">
+        <img src="https://image.tmdb.org/t/p/w45${pr.logo_path}" style="width:36px;height:36px;border-radius:8px;">
+        <div style="font-size:0.55rem;color:var(--ink-soft);margin-top:0.2rem;line-height:1.1;">${esc(pr.provider_name)}</div>
+      </div>`).join('')}</div>`;
+}
+const EXTRA_TAB_LABEL = 'Descubre más';
+async function loadRecommendations(seedQuery, excludeType, excludeId){
+  const block = document.getElementById('similarBlock'); if(!block || !seedQuery) return;
+  block.innerHTML = `<div class="section-label">Te podría interesar</div><p style="font-size:0.75rem;color:var(--ink-soft);">Buscando…</p>`;
+  let items = [];
+  if(settings.tmdbKey){
+    try{ const r = await tmdbSearchMulti(seedQuery); items = items.concat(r.map(normTmdb)); }catch(e){}
+  }
+  try{ const gb = await gbSearch(seedQuery); items = items.concat(gb.map(normBook)); }catch(e){}
+  items = items.filter(i=> !(i.type===excludeType && i.id===excludeId)).slice(0,9);
+  if(items.length===0){ block.innerHTML = ''; return; }
+  block.innerHTML = `<div class="section-label">Te podría interesar</div><div class="disc-grid">${items.map(discItemHtml).join('')}</div>`;
+  block.querySelectorAll('.disc-item').forEach(el=>{
+    const id = el.dataset.type==='book' ? el.dataset.id : parseInt(el.dataset.id);
+    el.addEventListener('click', ()=> openDiscoverDetail(id, el.dataset.type));
+  });
 }
 
 /* ---------------- PERFIL / STATS ---------------- */
@@ -1106,8 +1216,14 @@ window.addEventListener('scroll', ()=>{
   const y = window.scrollY;
   const nav = document.getElementById('bottomnav');
   const fab = document.getElementById('fabAdd');
-  if(y > lastScrollY && y > 40){ nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)'; }
-  else { nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; }
+  const topbar = document.getElementById('topbar');
+  if(y > lastScrollY && y > 40){
+    nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)';
+    topbar.style.transform = 'translateY(0)';
+  } else {
+    nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
+    topbar.style.transform = 'translateY(-100%)';
+  }
   lastScrollY = y;
 }, { passive:true });
 
