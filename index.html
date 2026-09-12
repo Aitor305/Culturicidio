@@ -1207,7 +1207,15 @@ function openManualAdd(){
 }
 
 /* ---------------- NAV / INIT ---------------- */
-document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click', ()=>{ activeTab=b.dataset.tab; render(); }));
+document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click', ()=>{
+  activeTab=b.dataset.tab;
+  window.scrollTo(0,0);
+  lastScrollY = 0;
+  document.getElementById('topbar').style.transform = 'translateY(0)';
+  document.getElementById('bottomnav').style.transform = 'translate(-50%, 0)';
+  const fab = document.getElementById('fabAdd'); if(fab) fab.style.transform = 'translateX(190px)';
+  render();
+}));
 document.getElementById('fabAdd').addEventListener('click', openManualAdd);
 document.getElementById('overlay').addEventListener('click', (ev)=>{ if(ev.target.id==='overlay') closeSheet(); });
 
@@ -1217,10 +1225,13 @@ window.addEventListener('scroll', ()=>{
   const nav = document.getElementById('bottomnav');
   const fab = document.getElementById('fabAdd');
   const topbar = document.getElementById('topbar');
-  if(y > lastScrollY && y > 40){
+  if(y <= 40){
+    nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
+    topbar.style.transform = 'translateY(0)';
+  } else if(y > lastScrollY){
     nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)';
     topbar.style.transform = 'translateY(0)';
-  } else {
+  } else if(y < lastScrollY){
     nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
     topbar.style.transform = 'translateY(-100%)';
   }
