@@ -435,7 +435,7 @@ function renderTopbar(){
       <button class="icon-btn" id="searchOpenBtn"><i class="ti ti-search"></i></button>`}
     </div>`;
   } else if(activeTab==='descubrir'){
-    html += `<div class="searchbar"><input id="discInput" placeholder="Buscar series o pelis…" value="${esc(discoverQuery)}"></div>`;
+    html += `<div class="subtabs-row"><input id="discInput" placeholder="Buscar series, pelis o libros…" value="${esc(discoverQuery)}"><button class="icon-btn" id="discClear"><i class="ti ti-x"></i></button></div>`;
   }
   tb.innerHTML = html;
   document.querySelectorAll('.subtab').forEach(b=>b.addEventListener('click', ()=>{
@@ -449,9 +449,14 @@ function renderTopbar(){
   const sob = document.getElementById('searchOpenBtn');
   if(sob) sob.addEventListener('click', ()=>{ searchOpenTabs[activeTab]=true; render(); setTimeout(()=>document.getElementById('searchInput')?.focus(),0); });
   const sc = document.getElementById('searchClose');
-  if(sc) sc.addEventListener('click', ()=>{ searchOpenTabs[activeTab]=false; searchQuery[activeTab]=''; render(); });
+  if(sc) sc.addEventListener('click', ()=>{
+    if(searchQuery[activeTab]){ searchQuery[activeTab]=''; if(si) si.value=''; renderMain(); document.getElementById('searchInput')?.focus(); }
+    else { searchOpenTabs[activeTab]=false; render(); }
+  });
   const di = document.getElementById('discInput');
   if(di) di.addEventListener('input', debounce(()=>{ discoverQuery=di.value; renderDescubrir(); },350));
+  const dc = document.getElementById('discClear');
+  if(dc) dc.addEventListener('click', ()=>{ discoverQuery=''; if(di) di.value=''; renderDescubrir(); document.getElementById('discInput')?.focus(); });
 }
 function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
 
