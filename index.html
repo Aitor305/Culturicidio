@@ -1220,23 +1220,37 @@ document.getElementById('fabAdd').addEventListener('click', openManualAdd);
 document.getElementById('overlay').addEventListener('click', (ev)=>{ if(ev.target.id==='overlay') closeSheet(); });
 
 let lastScrollY = 0;
+function showBottomShowTop(){
+  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
+  nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; topbar.style.transform = 'translateY(0)';
+}
+function hideBottomShowTop(){
+  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
+  nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)'; topbar.style.transform = 'translateY(0)';
+}
+function showBottomHideTop(){
+  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
+  nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; topbar.style.transform = 'translateY(-100%)';
+}
+let touchStartY = null;
+window.addEventListener('touchstart', (e)=>{ touchStartY = e.touches[0].clientY; }, {passive:true});
+window.addEventListener('touchmove', (e)=>{
+  if(touchStartY===null) return;
+  const y = e.touches[0].clientY;
+  const dy = y - touchStartY;
+  if(window.scrollY <= 2){ showBottomShowTop(); touchStartY = y; return; }
+  if(dy < -3){ hideBottomShowTop(); touchStartY = y; }
+  else if(dy > 3){ showBottomHideTop(); touchStartY = y; }
+}, {passive:true});
+window.addEventListener('touchend', ()=>{ touchStartY = null; });
+window.addEventListener('wheel', (e)=>{
+  if(window.scrollY <= 2){ showBottomShowTop(); return; }
+  if(e.deltaY > 0) hideBottomShowTop();
+  else if(e.deltaY < 0) showBottomHideTop();
+}, {passive:true});
 window.addEventListener('scroll', ()=>{
-  const y = window.scrollY;
-  const nav = document.getElementById('bottomnav');
-  const fab = document.getElementById('fabAdd');
-  const topbar = document.getElementById('topbar');
-  const dy = y - lastScrollY;
-  if(y <= 2){
-    nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
-    topbar.style.transform = 'translateY(0)';
-  } else if(dy > 0.5){
-    nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)';
-    topbar.style.transform = 'translateY(0)';
-  } else if(dy < -0.5){
-    nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
-    topbar.style.transform = 'translateY(-100%)';
-  }
-  lastScrollY = y;
+  if(window.scrollY <= 2) showBottomShowTop();
+  lastScrollY = window.scrollY;
 }, { passive:true });
 
 loadAll();
