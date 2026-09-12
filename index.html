@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Fichero</title>
+<title>Culturicidio</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -111,6 +111,7 @@ main{padding:1rem;}
 .ep-row{display:flex;justify-content:space-between;gap:0.6rem;padding:0.4rem 0;border-bottom:1px dashed var(--line);font-size:0.74rem;}
 .ep-row .name{color:var(--ink);}
 .ep-row .st{font-size:0.65rem;flex-shrink:0;}
+.ep-row-watch{width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--cream);border:none;font-size:0.7rem;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 .add-cta{width:100%;margin-top:1rem;font-family:'IBM Plex Mono',monospace;font-size:0.82rem;padding:0.7rem;background:var(--rust);color:#F7EFDF;border:none;cursor:pointer;}
 .add-cta.added{background:var(--teal);cursor:default;}
 .field{margin-bottom:0.8rem;}
@@ -167,6 +168,7 @@ main{padding:1rem;}
 </div>
 
 <div class="overlay" id="overlay"><div class="sheet" id="sheetContent"></div></div>
+<div class="overlay" id="dateAskOverlay" style="align-items:center;"><div class="sheet" id="dateAskContent" style="max-width:300px;border-radius:12px;"></div></div>
 
 <script>
 /* ---------------- STORAGE ---------------- */
@@ -252,11 +254,12 @@ async function markEpisodeWatched(seriesId, seasonNum, epNum){
   await saveSeries();
   render();
 }
-async function markWatchedThrough(seriesId, seasonNum, epNum){
+async function markWatchedThrough(seriesId, seasonNum, epNum, atValue){
   const s = series.find(x=>x.id===seriesId); if(!s) return;
   const target = flatEpisodes(s).find(e=>e.season_number===seasonNum && e.episode_number===epNum);
   if(!target) return;
-  const now = Date.now();
+  const useNow = atValue===undefined;
+  const base = useNow ? Date.now() : atValue;
   let offset = 0;
   flatEpisodes(s).forEach(fe=>{
     const isTargetOrBefore = (fe.air_date||'').localeCompare(target.air_date||'')<0 ||
@@ -264,7 +267,9 @@ async function markWatchedThrough(seriesId, seasonNum, epNum){
     if(isTargetOrBefore && !fe.watched){
       const season = s.seasons.find(sn=>sn.season_number===fe.season_number);
       const ep = season.episodes.find(e=>e.episode_number===fe.episode_number);
-      ep.watched = true; ep.watchedAt = now + offset; offset++;
+      ep.watched = true;
+      ep.watchedAt = (base===null) ? null : base + offset;
+      offset++;
     }
   });
   clearAllPins();
@@ -479,7 +484,7 @@ function renderSeriesTab(){
     });
     const sinComenzar = list.filter(s=>s._status==='sin_comenzar').sort((a,b)=>b.addedAt-a.addedAt);
     const watchedFlat = [];
-    series.forEach(s=> flatEpisodes(s).filter(e=>e.watched).forEach(e=> watchedFlat.push({s,e})));
+    series.forEach(s=> flatEpisodes(s).filter(e=>e.watched && e.watchedAt).forEach(e=> watchedFlat.push({s,e})));
     watchedFlat.sort((a,b)=>b.e.watchedAt-a.e.watchedAt);
 
     let html = '';
@@ -628,29 +633,55 @@ function openEpisodeDetail(sid, seasonNum, epNum){
   if(delBtn) delBtn.addEventListener('click', ()=>deleteSeries(sid));
 }
 function seasonsHtml(s){
-  return (s.seasons||[]).map(season=>{
-    const allWatched = season.episodes.every(e=>e.watched);
-    return `
+  return (s.seasons||[]).map(season=>`
     <div class="season-block">
-      <div class="season-title" style="display:flex;justify-content:space-between;align-items:center;">
-        <span>Temporada ${season.season_number}</span>
-        ${!allWatched?`<button class="season-watch-btn" data-season="${season.season_number}" style="font-size:0.62rem;font-family:'IBM Plex Mono',monospace;padding:0.3rem 0.5rem;background:var(--ink);color:var(--cream);border:none;cursor:pointer;">Marcar temporada</button>`:''}
-      </div>
-      ${season.episodes.map(e=>`<div class="ep-row"><span class="name">E${e.episode_number} ${esc(e.name)}</span>
-        <span class="st" style="color:${e.watched?'var(--teal-dark)':'var(--ink-soft)'}">${e.watched?'Vista':fmtDate(e.air_date)}</span></div>`).join('')}
-    </div>`;
-  }).join('');
+      <div class="season-title">Temporada ${season.season_number}</div>
+      ${season.episodes.map(e=>`<div class="ep-row">
+        <span class="name">E${e.episode_number} ${esc(e.name)}</span>
+        ${e.watched
+          ? `<span class="st" style="color:var(--teal-dark);">Vista${e.watchedAt?' · '+fmtDate(e.watchedAt):''}</span>`
+          : `<span class="st" style="display:flex;align-items:center;gap:0.4rem;">${fmtDate(e.air_date)}<button class="ep-row-watch" data-season="${season.season_number}" data-ep="${e.episode_number}" title="Marcar como visto"><i class="ti ti-check"></i></button></span>`}
+      </div>`).join('')}
+    </div>`).join('');
 }
 function bindSeasonButtons(sid){
-  document.querySelectorAll('.season-watch-btn').forEach(b=>{
-    b.addEventListener('click', async (ev)=>{
+  document.querySelectorAll('.ep-row-watch').forEach(b=>{
+    b.addEventListener('click', (ev)=>{
       ev.stopPropagation();
-      await markSeasonWatched(sid, parseInt(b.dataset.season));
-      const s = series.find(x=>x.id===sid);
-      document.getElementById('pane-seasons').innerHTML = seasonsHtml(s);
-      bindSeasonButtons(sid);
+      openDateAsk(sid, parseInt(b.dataset.season), parseInt(b.dataset.ep));
     });
   });
+}
+function openDateAsk(sid, seasonNum, epNum){
+  const content = `<h2>¿Cuándo lo viste?</h2>
+    <div class="sheet-sub">Se marcará este capítulo y todos los anteriores</div>
+    <div class="field"><input type="date" id="dateAskInput" value="${todayISO()}" max="${todayISO()}"></div>
+    <div class="modal-actions">
+      <button id="dateAskUnknown">No sé</button>
+      <button class="primary" id="dateAskConfirm">Confirmar</button>
+    </div>`;
+  document.getElementById('dateAskContent').innerHTML = content;
+  document.getElementById('dateAskOverlay').classList.add('open');
+  document.getElementById('dateAskConfirm').addEventListener('click', async ()=>{
+    const v = document.getElementById('dateAskInput').value;
+    const ts = v ? new Date(v+'T12:00:00').getTime() : Date.now();
+    await markWatchedThrough(sid, seasonNum, epNum, ts);
+    closeDateAsk();
+    refreshSeasonsPane(sid);
+  });
+  document.getElementById('dateAskUnknown').addEventListener('click', async ()=>{
+    await markWatchedThrough(sid, seasonNum, epNum, null);
+    closeDateAsk();
+    refreshSeasonsPane(sid);
+  });
+}
+function closeDateAsk(){ document.getElementById('dateAskOverlay').classList.remove('open'); }
+function refreshSeasonsPane(sid){
+  const s = series.find(x=>x.id===sid);
+  const pane = document.getElementById('pane-seasons');
+  if(pane && s){ pane.innerHTML = seasonsHtml(s); bindSeasonButtons(sid); }
+  const epPane = document.getElementById('pane-ep');
+  if(epPane) epPane.innerHTML = '';
 }
 function openSeriesFinalDetail(sid){
   const s = series.find(x=>x.id===sid); if(!s) return;
@@ -892,13 +923,13 @@ function cutoffFor(period){ const days=PERIODS[period]; if(!days) return 0; retu
 
 function allWatchedEvents(cutoff){
   const out=[];
-  series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && e.watchedAt>=cutoff) out.push({watchedAt:e.watchedAt, minutes:e.runtime||30}); }));
-  movies.forEach(m=>{ if(m.watched && m.watchedAt>=cutoff) out.push({watchedAt:m.watchedAt, minutes:m.runtime||100}); });
+  series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && e.watchedAt && e.watchedAt>=cutoff) out.push({watchedAt:e.watchedAt, minutes:e.runtime||30}); }));
+  movies.forEach(m=>{ if(m.watched && m.watchedAt && m.watchedAt>=cutoff) out.push({watchedAt:m.watchedAt, minutes:m.runtime||100}); });
   return out;
 }
 function forecastFor(s){
   const cutoff = Date.now()-182*86400000;
-  const watched6m = flatEpisodes(s).filter(e=>e.watched && e.watchedAt>=cutoff);
+  const watched6m = flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cutoff);
   const minutesWatched = watched6m.reduce((a,e)=>a+(e.runtime||30),0);
   const remaining = airedEpisodes(s).filter(e=>!e.watched);
   const minutesRemaining = remaining.reduce((a,e)=>a+(e.runtime||30),0);
@@ -939,7 +970,7 @@ function renderPerfil(){
   let jointMinutesWatched=0, jointMinutesRemaining=0;
   series.filter(s=>s._status==='en_curso').forEach(s=>{
     const cut = Date.now()-182*86400000;
-    jointMinutesWatched += flatEpisodes(s).filter(e=>e.watched && e.watchedAt>=cut).reduce((a,e)=>a+(e.runtime||30),0);
+    jointMinutesWatched += flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cut).reduce((a,e)=>a+(e.runtime||30),0);
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });
   const jointForecast = jointMinutesWatched>0 ? jointMinutesRemaining/(jointMinutesWatched/182) : null;
@@ -989,7 +1020,7 @@ function exportData(){
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'fichero-datos-'+todayISO()+'.json';
+  a.href = url; a.download = 'culturicidio-datos-'+todayISO()+'.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -1008,7 +1039,7 @@ function importData(ev){
       recomputeAll();
       await saveSeries(); await saveMovies(); await saveBooks(); await saveProfile(); await saveSettings();
       render();
-    }catch(e){ alert('No se pudo leer el archivo. Comprueba que es una copia exportada desde Fichero.'); }
+    }catch(e){ alert('No se pudo leer el archivo. Comprueba que es una copia exportada desde Culturicidio.'); }
   };
   reader.readAsText(file);
   ev.target.value = '';
