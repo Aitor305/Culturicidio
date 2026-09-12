@@ -1225,13 +1225,14 @@ window.addEventListener('scroll', ()=>{
   const nav = document.getElementById('bottomnav');
   const fab = document.getElementById('fabAdd');
   const topbar = document.getElementById('topbar');
-  if(y <= 40){
+  const dy = y - lastScrollY;
+  if(y <= 2){
     nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
     topbar.style.transform = 'translateY(0)';
-  } else if(y > lastScrollY){
+  } else if(dy > 0.5){
     nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)';
     topbar.style.transform = 'translateY(0)';
-  } else if(y < lastScrollY){
+  } else if(dy < -0.5){
     nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
     topbar.style.transform = 'translateY(-100%)';
   }
