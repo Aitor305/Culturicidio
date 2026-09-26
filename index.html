@@ -1178,12 +1178,13 @@ function editProfile(){
 
 /* ---------------- MANUAL ADD ---------------- */
 function openManualAdd(){
-  const isSeries = activeTab==='series';
+  const kind = activeTab; // 'series' | 'pelis' | 'biblioteca'
+  const labelMap = {series:'serie', pelis:'peli', biblioteca:'libro o revista'};
   const html = `<button class="sheet-close">&times;</button>
-    <h2>Añadir ${isSeries?'serie':'peli'} manualmente</h2>
+    <h2>Añadir ${labelMap[kind]} manualmente</h2>
     <div class="field"><label>Título</label><input id="maTitle"><div class="err" id="maErr">Escribe un título</div></div>
-    <div class="field"><label>Fecha de estreno</label><input id="maDate" type="date"></div>
-    <div class="field"><label>Duración (minutos por ${isSeries?'capítulo':'película'})</label><input id="maDur" type="number" value="${isSeries?30:100}"></div>
+    ${kind==='biblioteca' ? `<div class="field"><label>Autor</label><input id="maAuthor"></div>` : `<div class="field"><label>Fecha de estreno</label><input id="maDate" type="date"></div>`}
+    <div class="field"><label>${kind==='biblioteca'?'Páginas':`Duración (minutos por ${kind==='series'?'capítulo':'película'})`}</label><input id="maDur" type="number" value="${kind==='series'?30:kind==='pelis'?100:250}"></div>
     <div class="field"><label>Sinopsis</label><textarea id="maOverview"></textarea></div>
     <div class="modal-actions"><button id="maCancel">Cancelar</button><button class="primary" id="maSave">Añadir</button></div>`;
   openSheet(html);
@@ -1191,16 +1192,21 @@ function openManualAdd(){
   document.getElementById('maSave').addEventListener('click', async ()=>{
     const title = document.getElementById('maTitle').value.trim();
     if(!title){ document.getElementById('maErr').style.display='block'; return; }
-    const date = document.getElementById('maDate').value || todayISO();
     const dur = parseInt(document.getElementById('maDur').value)||30;
     const overview = document.getElementById('maOverview').value.trim();
-    if(isSeries){
+    if(kind==='series'){
+      const date = document.getElementById('maDate').value || todayISO();
       series.push({ id:uid('s_'), tmdbId:null, title, poster:'', overview, cast:[], tmdb_status:'', addedAt:Date.now(), pinned:false, _wasFinalizada:false,
         seasons:[{season_number:1, episodes:[{episode_number:1,name:'',overview:'',air_date:date,runtime:dur,watched:false,watchedAt:null}]}] });
       recomputeAll(); await saveSeries();
-    } else {
+    } else if(kind==='pelis'){
+      const date = document.getElementById('maDate').value || todayISO();
       movies.push({ id:uid('m_'), tmdbId:null, title, poster:'', overview, cast:[], releaseDate:date, runtime:dur, watched:false, watchedAt:null, addedAt:Date.now() });
       await saveMovies();
+    } else {
+      const author = document.getElementById('maAuthor').value.trim();
+      books.push({ id:uid('b_'), gbId:null, title, author, cover:'', overview, pages:dur, publishedDate:'', watched:false, watchedAt:null, addedAt:Date.now() });
+      await saveBooks();
     }
     closeSheet(); render();
   });
@@ -1220,17 +1226,13 @@ document.getElementById('fabAdd').addEventListener('click', openManualAdd);
 document.getElementById('overlay').addEventListener('click', (ev)=>{ if(ev.target.id==='overlay') closeSheet(); });
 
 let lastScrollY = 0;
-function showBottomShowTop(){
-  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
-  nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; topbar.style.transform = 'translateY(0)';
+function showBottom(){
+  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd');
+  nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)';
 }
-function hideBottomShowTop(){
-  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
-  nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)'; topbar.style.transform = 'translateY(0)';
-}
-function showBottomHideTop(){
-  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd'); const topbar = document.getElementById('topbar');
-  nav.style.transform = 'translate(-50%, 0)'; if(fab) fab.style.transform='translateX(190px)'; topbar.style.transform = 'translateY(-100%)';
+function hideBottom(){
+  const nav = document.getElementById('bottomnav'); const fab = document.getElementById('fabAdd');
+  nav.style.transform = 'translate(-50%, 100%)'; if(fab) fab.style.transform='translateX(190px) translateY(100px)';
 }
 let touchStartY = null;
 window.addEventListener('touchstart', (e)=>{ touchStartY = e.touches[0].clientY; }, {passive:true});
@@ -1238,18 +1240,18 @@ window.addEventListener('touchmove', (e)=>{
   if(touchStartY===null) return;
   const y = e.touches[0].clientY;
   const dy = y - touchStartY;
-  if(window.scrollY <= 2){ showBottomShowTop(); touchStartY = y; return; }
-  if(dy < -3){ hideBottomShowTop(); touchStartY = y; }
-  else if(dy > 3){ showBottomHideTop(); touchStartY = y; }
+  if(window.scrollY <= 2){ showBottom(); touchStartY = y; return; }
+  if(dy < -3){ hideBottom(); touchStartY = y; }
+  else if(dy > 3){ showBottom(); touchStartY = y; }
 }, {passive:true});
 window.addEventListener('touchend', ()=>{ touchStartY = null; });
 window.addEventListener('wheel', (e)=>{
-  if(window.scrollY <= 2){ showBottomShowTop(); return; }
-  if(e.deltaY > 0) hideBottomShowTop();
-  else if(e.deltaY < 0) showBottomHideTop();
+  if(window.scrollY <= 2){ showBottom(); return; }
+  if(e.deltaY > 0) hideBottom();
+  else if(e.deltaY < 0) showBottom();
 }, {passive:true});
 window.addEventListener('scroll', ()=>{
-  if(window.scrollY <= 2) showBottomShowTop();
+  if(window.scrollY <= 2) showBottom();
   lastScrollY = window.scrollY;
 }, { passive:true });
 
