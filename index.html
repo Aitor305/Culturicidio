@@ -530,8 +530,9 @@ function renderSeriesTab(){
     }
     bindEpCards();
   } else if(seriesSub==='estrenos'){
+    const cutoff = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
     const all = [];
-    series.forEach(s=> flatEpisodes(s).forEach(e=> all.push({s,e})));
+    series.forEach(s=> flatEpisodes(s).filter(e=>e.air_date && e.air_date>=cutoff).forEach(e=> all.push({s,e})));
     all.sort((a,b)=> (a.e.air_date||'').localeCompare(b.e.air_date||''));
     if(all.length===0){ main.innerHTML = `<div class="empty"><b>Sin estrenos</b>Añade series en Descubrir para ver aquí sus próximos capítulos.</div>`; return; }
     let html=''; let lastDate='';
