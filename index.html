@@ -1235,7 +1235,7 @@ document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click', ()=>
   activeTab=b.dataset.tab;
   window.scrollTo(0,0);
   lastScrollY = 0;
-  document.getElementById('topbar').style.transform = 'translateY(0)';
+  document.getElementById('topbar').style.transform = 'translate(-50%, 0)';
   document.getElementById('bottomnav').style.transform = 'translate(-50%, 0)';
   const fab = document.getElementById('fabAdd'); if(fab) fab.style.transform = 'translateX(190px)';
   render();
