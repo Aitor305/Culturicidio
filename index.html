@@ -551,7 +551,11 @@ function renderSeriesTab(){
   } else {
     let list = series.filter(s=>s._status==='finalizada');
     if(q) list = list.filter(s=>s.title.toLowerCase().includes(q));
-    list.sort((a,b)=>{ const la=lastWatchedOf(a), lb=lastWatchedOf(b); return (lb?.watchedAt||0)-(la?.watchedAt||0); });
+    list.sort((a,b)=>{
+      const va = (lastWatchedOf(a)?.watchedAt) || a.addedAt || 0;
+      const vb = (lastWatchedOf(b)?.watchedAt) || b.addedAt || 0;
+      return vb-va;
+    });
     if(list.length===0){ main.innerHTML = `<div class="empty"><b>Nada finalizado aún</b>Cuando termines de ver una serie aparecerá aquí.</div>`; return; }
     main.innerHTML = list.map(s=>{
       const future = hasFutureEpisodes(s);
