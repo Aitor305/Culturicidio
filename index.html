@@ -42,7 +42,7 @@ h1,h2,h3{font-family:'Abril Fatface',serif; font-weight:500; margin:0;}
 main{padding:1rem;}
 .section-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);margin:1.4rem 0 0.5rem;border-top:1px dashed var(--line);padding-top:0.7rem;}
 .section-label:first-child{margin-top:0;border-top:none;padding-top:0;}
-.section-label-strong{font-size:1.05rem;text-transform:none;letter-spacing:0;color:var(--ink);font-family:'Abril Fatface',serif;font-weight:500;margin:1.5rem 0 0.6rem;border-top:1px dashed var(--line);padding-top:0.8rem;}
+.section-label-strong{font-size:1.05rem;text-transform:none;letter-spacing:0;color:var(--ink);font-family:'Abril Fatface',serif;font-weight:500;margin:1.5rem 0 0.6rem;border-top:1px dashed var(--line);padding-top:0.8rem;scroll-margin-top:100px;}
 .section-label-strong:first-child{margin-top:0;border-top:none;padding-top:0;}
 .empty{text-align:center;padding:2.5rem 1rem;color:var(--ink-soft);font-size:0.8rem;border:1px dashed var(--line);}
 .empty b{display:block;font-family:'Abril Fatface',serif;font-size:1.15rem;color:var(--ink);font-weight:500;margin-bottom:0.3rem;}
@@ -511,7 +511,7 @@ function renderSeriesTab(){
       html += `<div class="section-label">Vistos · desliza hacia arriba</div>`;
       html += watchedFlat.slice(0,60).map(({s,e})=>epCardHtml(s,e,'watchedhist',true)).join('');
     }
-    html += `<div class="section-label-strong">Viendo</div>`;
+    html += `<div class="section-label-strong" id="viendoAnchor">Viendo</div>`;
     if(pinned.length+curso.length===0){
       html += `<div class="empty"><b>Nada en curso</b>Añade una serie o marca un capítulo para empezar.</div>`;
     } else {
@@ -522,7 +522,11 @@ function renderSeriesTab(){
     if(sinComenzar.length===0){ html += `<div class="empty">No tienes series sin empezar.</div>`; }
     else html += sinComenzar.map(s=>{ const ep=nextEpisodeOf(s)||flatEpisodes(s)[0]; return ep? epCardHtml(s,ep,'notstarted',false):''; }).join('');
     main.innerHTML = html;
-    window.scrollTo(0,0);
+    if(watchedFlat.length){
+      setTimeout(()=>{ document.getElementById('viendoAnchor')?.scrollIntoView({block:'start'}); }, 0);
+    } else {
+      window.scrollTo(0,0);
+    }
     bindEpCards();
   } else if(seriesSub==='estrenos'){
     const all = [];
