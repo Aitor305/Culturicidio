@@ -181,20 +181,71 @@ let books = [];
 let profile = { name:'Tu perfil', avatar:'' };
 let settings = { tmdbKey:'' };
 
+/* ---------------- INDEXEDDB STORAGE ---------------- */
+let _dbPromise = null;
+function openDB(){
+  if(_dbPromise) return _dbPromise;
+  _dbPromise = new Promise((resolve, reject)=>{
+    const req = indexedDB.open('culturicidio_db', 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore('kv'); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+  return _dbPromise;
+}
+async function idbGet(key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction('kv','readonly');
+    const r = tx.objectStore('kv').get(key);
+    r.onsuccess = ()=> resolve(r.result);
+    r.onerror = ()=> reject(r.error);
+  });
+}
+async function idbSet(key, value){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction('kv','readwrite');
+    tx.objectStore('kv').put(value, key);
+    tx.oncomplete = ()=> resolve(true);
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+async function migrateFromLocalStorageIfNeeded(){
+  try{
+    const already = await idbGet('migrated_v1');
+    if(already) return;
+    const keys = ['series','movies','books','profile','settings'];
+    for(const k of keys){
+      const raw = localStorage.getItem('fichero_'+k);
+      if(raw){ try{ await idbSet(k, JSON.parse(raw)); }catch(e){} }
+    }
+    await idbSet('migrated_v1', true);
+  }catch(e){ console.error('Migration failed', e); }
+}
 async function loadAll(){
-  try{ const v = localStorage.getItem('fichero_series'); series = v? JSON.parse(v):[]; }catch(e){ series=[]; }
-  try{ const v = localStorage.getItem('fichero_movies'); movies = v? JSON.parse(v):[]; }catch(e){ movies=[]; }
-  try{ const v = localStorage.getItem('fichero_books'); books = v? JSON.parse(v):[]; }catch(e){ books=[]; }
-  try{ const v = localStorage.getItem('fichero_profile'); profile = v? JSON.parse(v):profile; }catch(e){}
-  try{ const v = localStorage.getItem('fichero_settings'); settings = v? JSON.parse(v):settings; }catch(e){}
+  await migrateFromLocalStorageIfNeeded();
+  try{ series = (await idbGet('series')) || []; }catch(e){ series=[]; }
+  try{ movies = (await idbGet('movies')) || []; }catch(e){ movies=[]; }
+  try{ books = (await idbGet('books')) || []; }catch(e){ books=[]; }
+  try{ profile = (await idbGet('profile')) || profile; }catch(e){}
+  try{ settings = (await idbGet('settings')) || settings; }catch(e){}
   recomputeAll();
   render();
 }
-async function saveSeries(){ try{ localStorage.setItem('fichero_series', JSON.stringify(series)); }catch(e){} }
-async function saveMovies(){ try{ localStorage.setItem('fichero_movies', JSON.stringify(movies)); }catch(e){} }
-async function saveBooks(){ try{ localStorage.setItem('fichero_books', JSON.stringify(books)); }catch(e){} }
-async function saveProfile(){ try{ localStorage.setItem('fichero_profile', JSON.stringify(profile)); }catch(e){} }
-async function saveSettings(){ try{ localStorage.setItem('fichero_settings', JSON.stringify(settings)); }catch(e){} }
+function warnStorageFull(e){
+  alert('No se ha podido guardar: el almacenamiento está lleno o no disponible.\n\nPrueba a eliminar alguna serie, peli o libro que ya no necesites, o exporta tus datos como copia de seguridad antes de seguir añadiendo más.');
+  console.error('Storage save failed', e);
+}
+async function saveSeries(){ try{ await idbSet('series', series); }catch(e){ warnStorageFull(e); } }
+async function saveMovies(){ try{ await idbSet('movies', movies); }catch(e){ warnStorageFull(e); } }
+async function saveBooks(){ try{ await idbSet('books', books); }catch(e){ warnStorageFull(e); } }
+async function saveProfile(){ try{ await idbSet('profile', profile); }catch(e){ warnStorageFull(e); } }
+async function saveSettings(){ try{ await idbSet('settings', settings); }catch(e){ warnStorageFull(e); } }
+function storageUsageKB(){
+  const total = JSON.stringify(series).length + JSON.stringify(movies).length + JSON.stringify(books).length;
+  return Math.round(total/1024);
+}
 
 /* ---------------- HELPERS ---------------- */
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -1133,6 +1184,7 @@ function renderPerfil(){
   }
 
   html += `<div class="section-label">Copia de seguridad</div>`;
+  html += `<div class="stat-card"><div class="label">Espacio usado</div><div class="value">${storageUsageKB()} KB</div><div class="subvalue">Guardado con bastante margen disponible en tu móvil.</div></div>`;
   html += `<div class="stat-card">
     <div class="subvalue" style="margin-bottom:0.6rem;">Descarga tus datos para pasarlos a otro móvil, o carga una copia anterior.</div>
     <button class="add-cta" id="exportBtn" style="margin-top:0;">Exportar datos</button>
