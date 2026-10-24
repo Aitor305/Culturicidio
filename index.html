@@ -156,8 +156,13 @@ main{padding:1rem;}
 .bar-row .val{width:78px;flex-shrink:0;text-align:right;color:var(--ink);}
 .bar-track{flex:1;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;position:relative;overflow:hidden;}
 .bar-fill{height:100%;background:var(--mustard);border-radius:4px;}
-.forecast-item{border-bottom:1px solid var(--hair);padding:0.55rem 0;font-size:0.78rem;color:var(--ink-soft);}
+.forecast-item{display:flex;justify-content:space-between;align-items:baseline;gap:0.6rem;border-bottom:1px solid var(--hair);padding:0.55rem 0;font-size:0.8rem;}
+.forecast-item:last-child{border-bottom:none;}
 .forecast-item b{color:var(--ink);font-weight:600;}
+.fc-left{min-width:0;}
+.fc-sub{font-size:0.7rem;color:var(--ink-soft);margin-top:0.15rem;}
+.fc-right{flex-shrink:0;text-align:right;color:var(--ink);font-size:0.8rem;}
+.fc-right.nodata{color:var(--ink-soft);font-size:0.72rem;}
 .loading{text-align:center;padding:2.5rem;color:var(--ink-soft);font-size:0.8rem;}
 </style>
 </head>
@@ -1200,6 +1205,23 @@ function fmtDurationMin(totalMin){
   return parts.join(', ');
 }
 // Horas y minutos (para el desglose por día)
+// Fecha en la que se terminaría, a partir de los días que faltan: DD-MM-AAAA
+function endDateStr(days){
+  const d = new Date(); d.setHours(12,0,0,0);
+  d.setDate(d.getDate() + Math.round(days));
+  const dd = String(d.getDate()).padStart(2,'0'), mm = String(d.getMonth()+1).padStart(2,'0');
+  return dd+'-'+mm+'-'+d.getFullYear();
+}
+// "En 5 meses y 12 días", "En 10 días", "Hoy"
+function fmtUntil(days){
+  const total = Math.max(0, Math.round(days));
+  if(total===0) return 'Hoy';
+  const months = Math.floor(total/30), d = total%30;
+  const parts = [];
+  if(months) parts.push(months+' '+(months===1?'mes':'meses'));
+  if(d) parts.push(d+' '+(d===1?'día':'días'));
+  return 'En '+parts.join(' y ');
+}
 function fmtHM(min){
   min = Math.round(min);
   const h = Math.floor(min/60), m = min%60;
@@ -1283,9 +1305,13 @@ function renderPerfil(){
   html += `</div>`;
 
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
-  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? fmtDurationMin(jointForecast*1440) : 'Sin datos suficientes'}</div><div class="subvalue">Quedan ${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'}</div></div>`;
+  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${jointForecast!==null? fmtUntil(jointForecast)+' · quedan ' : 'Quedan '}${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'}</div></div>`;
   if(forecasts.length){
-    html += `<div class="stat-card">` + forecasts.map(({s,f})=>`<div class="forecast-item"><b>${esc(s.title)}</b><br>${f.days!==null? fmtDurationMin(f.days*1440) : 'Sin datos suficientes'} · quedan ${f.episodesRemaining} capítulo${f.episodesRemaining===1?'':'s'}</div>`).join('') + `</div>`;
+    html += `<div class="stat-card">` + forecasts.map(({s,f})=>{
+      const n = f.episodesRemaining, caps = n+' capítulo'+(n===1?'':'s');
+      const subTxt = f.days!==null ? fmtUntil(f.days)+' · '+caps : 'Quedan '+caps;
+      return `<div class="forecast-item"><div class="fc-left"><b>${esc(s.title)}</b><div class="fc-sub">${subTxt}</div></div><div class="fc-right${f.days===null?' nodata':''}">${f.days!==null? endDateStr(f.days) : 'Sin datos suficientes'}</div></div>`;
+    }).join('') + `</div>`;
   }
 
   html += `<div class="section-label">Copia de seguridad</div>`;
