@@ -1212,16 +1212,6 @@ function endDateStr(days){
   const dd = String(d.getDate()).padStart(2,'0'), mm = String(d.getMonth()+1).padStart(2,'0');
   return dd+'-'+mm+'-'+d.getFullYear();
 }
-// "En 5 meses y 12 días", "En 10 días", "Hoy"
-function fmtUntil(days){
-  const total = Math.max(0, Math.round(days));
-  if(total===0) return 'Hoy';
-  const months = Math.floor(total/30), d = total%30;
-  const parts = [];
-  if(months) parts.push(months+' '+(months===1?'mes':'meses'));
-  if(d) parts.push(d+' '+(d===1?'día':'días'));
-  return 'En '+parts.join(' y ');
-}
 function fmtHM(min){
   min = Math.round(min);
   const h = Math.floor(min/60), m = min%60;
@@ -1305,11 +1295,11 @@ function renderPerfil(){
   html += `</div>`;
 
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
-  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${jointForecast!==null? fmtUntil(jointForecast)+' · quedan ' : 'Quedan '}${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'}</div></div>`;
+  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div></div>`;
   if(forecasts.length){
     html += `<div class="stat-card">` + forecasts.map(({s,f})=>{
-      const n = f.episodesRemaining, caps = n+' capítulo'+(n===1?'':'s');
-      const subTxt = f.days!==null ? fmtUntil(f.days)+' · '+caps : 'Quedan '+caps;
+      const n = f.episodesRemaining;
+      const subTxt = n+' capítulo'+(n===1?'':'s')+' restante'+(n===1?'':'s');
       return `<div class="forecast-item"><div class="fc-left"><b>${esc(s.title)}</b><div class="fc-sub">${subTxt}</div></div><div class="fc-right${f.days===null?' nodata':''}">${f.days!==null? endDateStr(f.days) : 'Sin datos suficientes'}</div></div>`;
     }).join('') + `</div>`;
   }
