@@ -63,6 +63,10 @@ main{padding:1rem;}
 .chip{font-size:0.62rem;padding:0.12rem 0.55rem;border-radius:10px;}
 .chip-gold{border:1px solid var(--mustard);color:var(--mustard);}
 .chip-outline{border:1px solid rgba(255,255,255,0.2);color:var(--ink-soft);}
+.chip-seasons{border:1px solid var(--st);color:var(--st);font-weight:500;}
+.chip-seasons.st-ended{--st:#FF4D4D;background:rgba(255,77,77,0.16);}
+.chip-seasons.st-unknown{--st:#FFB000;background:rgba(255,176,0,0.16);}
+.chip-seasons.st-known{--st:#3DDC84;background:rgba(61,220,132,0.16);}
 .pin-flag{font-size:0.62rem;color:var(--mustard);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;}
 .watch-btn{
   align-self:center; font-size:1rem; width:30px; height:30px; padding:0; border-radius:50%;
@@ -155,6 +159,15 @@ main{padding:1rem;}
 .bar-row{display:flex;align-items:center;gap:0.5rem;font-size:0.7rem;margin:0.3rem 0;}
 .bar-row .lbl{width:64px;flex-shrink:0;color:var(--ink-soft);}
 .bar-row .val{width:78px;flex-shrink:0;text-align:right;color:var(--ink);}
+.vchart-area{display:flex;gap:0.4rem;align-items:flex-end;height:154px;margin-top:0.7rem;border-bottom:1px solid var(--hair);}
+.vcol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;}
+.vcol-val{font-size:0.58rem;color:var(--ink);margin-bottom:0.25rem;white-space:nowrap;}
+.vcol-val.zero{color:var(--ink-soft);}
+.vbar{width:70%;max-width:34px;border-radius:5px 5px 2px 2px;background:rgba(255,176,0,0.55);}
+.vbar.max{background:var(--mustard);}
+.vbar.live{background:repeating-linear-gradient(135deg,rgba(255,176,0,0.55) 0 5px,rgba(255,176,0,0.25) 5px 10px);}
+.vcol-lab{font-size:0.6rem;color:var(--ink-soft);margin-top:0.4rem;white-space:nowrap;}
+.chart-note{font-size:0.65rem;color:var(--ink-soft);padding:0 0.2rem;margin-bottom:0.6rem;}
 .bar-track{flex:1;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;position:relative;overflow:hidden;}
 .bar-fill{height:100%;background:var(--mustard);border-radius:4px;}
 .forecast-item{display:flex;justify-content:space-between;align-items:baseline;gap:0.6rem;border-bottom:1px solid var(--hair);padding:0.55rem 0;font-size:0.8rem;}
@@ -716,7 +729,7 @@ function remainingChips(s, ep){
 function chipsHtml(s, e, withSeasons){
   const c = remainingChips(s, e);
   let html = `<div class="chip-row"><span class="chip chip-gold">${c.total} capítulo${c.total===1?'':'s'} restante${c.total===1?'':'s'}</span>`;
-  if(withSeasons) html += `<span class="chip chip-outline">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
+  if(withSeasons) html += `<span class="chip chip-seasons st-${endState(s).state}">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
   return html + `</div>`;
 }
 // inViendo: tarjeta de la sección "Viendo" (sin título del capítulo y con temporadas restantes)
@@ -1243,9 +1256,9 @@ function forecastFor(s){
   const minutesWatched = watched6m.reduce((a,e)=>a+(e.runtime||30),0);
   const remaining = airedEpisodes(s).filter(e=>!e.watched);
   const minutesRemaining = remaining.reduce((a,e)=>a+(e.runtime||30),0);
-  if(watched6m.length===0 || minutesWatched===0) return {days:null, episodesRemaining:remaining.length};
+  if(watched6m.length===0 || minutesWatched===0) return {days:null, episodesRemaining:remaining.length, minutesRemaining};
   const days = minutesRemaining / (minutesWatched/182);
-  return {days, episodesRemaining:remaining.length};
+  return {days, episodesRemaining:remaining.length, minutesRemaining};
 }
 // Duración en meses / días / horas (a partir de 24 h pasa a días, a partir de 30 días a meses)
 function fmtDurationMin(totalMin){
@@ -1281,6 +1294,49 @@ function seriesWatchedEvents(cutoff){
   series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && e.watchedAt && e.watchedAt>=cutoff) out.push({watchedAt:e.watchedAt, minutes:e.runtime||30}); }));
   return out;
 }
+// Capítulos vistos sin fecha ("No sé cuándo"): solo cuentan en Horas vistas > Siempre
+function seriesUndatedEvents(){
+  const out=[];
+  series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && !e.watchedAt) out.push({minutes:e.runtime||30}); }));
+  return out;
+}
+// "3 días, 4 horas y 20 minutos" (años, meses, días, horas y minutos; solo las unidades que no son cero)
+function fmtFull(totalMin){
+  totalMin = Math.max(0, Math.round(totalMin));
+  const MIN_D = 1440, MIN_M = 30*MIN_D, MIN_Y = 12*MIN_M;
+  let rest = totalMin;
+  const years = Math.floor(rest/MIN_Y); rest -= years*MIN_Y;
+  const months = Math.floor(rest/MIN_M); rest -= months*MIN_M;
+  const days = Math.floor(rest/MIN_D); rest -= days*MIN_D;
+  const hours = Math.floor(rest/60); const mins = rest - hours*60;
+  const parts = [];
+  if(years) parts.push(years+(years===1?' año':' años'));
+  if(months) parts.push(months+(months===1?' mes':' meses'));
+  if(days) parts.push(days+(days===1?' día':' días'));
+  if(hours) parts.push(hours+(hours===1?' hora':' horas'));
+  if(mins || !parts.length) parts.push(mins+(mins===1?' minuto':' minutos'));
+  return parts.length===1 ? parts[0] : parts.slice(0,-1).join(', ')+' y '+parts[parts.length-1];
+}
+// Etiquetas encima de las barras verticales
+function fmtCompact(min){
+  if(min===0) return '0';
+  const h = Math.floor(min/60), m = min%60;
+  return h===0 ? m+'m' : h+'h'+(m? ' '+m+'m':'');
+}
+function fmtHoursOnly(min){
+  if(min===0) return '0';
+  return min<60 ? min+'m' : Math.round(min/60)+' h';
+}
+// Gráfica de barras verticales. cols: [etiqueta, minutos, periodoEnCurso]
+function vChart(title, subtitle, cols, valueFmt){
+  const max = Math.max(...cols.map(x=>x[1]),1);
+  const bars = cols.map(([lab,min,live])=>{
+    const h = Math.max(min>0?4:0, Math.round(min/max*110));
+    const cls = 'vbar'+(live?' live':(min===max&&min>0?' max':''));
+    return `<div class="vcol"><div class="vcol-val${min?'':' zero'}">${valueFmt(min)}</div><div class="${cls}" style="height:${h}px;"></div><div class="vcol-lab">${lab}</div></div>`;
+  }).join('');
+  return `<div class="stat-card"><div class="label">${title}</div>${subtitle?`<div class="subvalue" style="margin-top:0.1rem;">${subtitle}</div>`:''}<div class="vchart-area">${bars}</div></div>`;
+}
 // Mismo orden que la sección "Viendo" de Pendientes
 function viendoOrdered(){
   const pinned = series.filter(s=>s._status==='en_curso' && s.pinned).sort((a,b)=>(b.pinnedAt||0)-(a.pinnedAt||0));
@@ -1296,6 +1352,9 @@ function renderPerfil(){
   const events = allWatchedEvents(cutoff);               // series + pelis (solo para la franja horaria)
   const seriesEvents = seriesWatchedEvents(cutoff);      // solo series (horas vistas)
   const seriesMinutes = seriesEvents.reduce((a,e)=>a+e.minutes,0);
+  const undatedEvents = statPeriod==='siempre' ? seriesUndatedEvents() : [];
+  const hoursMinutes = seriesMinutes + undatedEvents.reduce((a,e)=>a+e.minutes,0);
+  const hoursCount = seriesEvents.length + undatedEvents.length;
 
   const totalSeries = series.length, curso = series.filter(s=>s._status==='en_curso').length, sinComenzar = series.filter(s=>s._status==='sin_comenzar').length, fin = series.filter(s=>s._status==='finalizada').length;
   const totalMovies = movies.length, movVistas = movies.filter(m=>m.watched).length, movPend = totalMovies-movVistas;
@@ -1319,8 +1378,31 @@ function renderPerfil(){
     const mins = allSeriesEvents.filter(e=>e.watchedAt>=d0.getTime() && e.watchedAt<d1.getTime()).reduce((a,e)=>a+e.minutes,0);
     weekRows.push({name:weekdayNames[d0.getDay()], mins});
   }
-  const maxWeekMin = Math.max(...weekRows.map(r=>r.mins),1);
   const weekFrom = weekRows[0].name.toLowerCase(), weekTo = weekRows[6].name.toLowerCase();
+  const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const sumBetween = (d0,d1)=> allSeriesEvents.filter(e=>e.watchedAt>=d0.getTime() && e.watchedAt<d1.getTime()).reduce((a,e)=>a+e.minutes,0);
+  const dayCols = weekRows.map(r=>[r.name.slice(0,3), r.mins, false]);
+  // Últimas 4 semanas (lunes a domingo; la última es la semana en curso)
+  const mondayThis = new Date(todayStart); mondayThis.setDate(mondayThis.getDate() - ((todayStart.getDay()+6)%7));
+  const weekCols = [];
+  for(let i=3;i>=0;i--){
+    const d0 = new Date(mondayThis); d0.setDate(d0.getDate()-7*i);
+    const d1 = new Date(d0); d1.setDate(d1.getDate()+7);
+    weekCols.push([d0.getDate()+' '+monthNames[d0.getMonth()].toLowerCase(), sumBetween(d0,d1), i===0]);
+  }
+  // Últimos 6 meses (el último es el mes en curso)
+  const monthCols = [];
+  for(let i=5;i>=0;i--){
+    const d0 = new Date(todayStart.getFullYear(), todayStart.getMonth()-i, 1);
+    const d1 = new Date(todayStart.getFullYear(), todayStart.getMonth()-i+1, 1);
+    monthCols.push([monthNames[d0.getMonth()], sumBetween(d0,d1), i===0]);
+  }
+  // Últimos 5 años (el último es el año en curso)
+  const yearCols = [];
+  for(let i=4;i>=0;i--){
+    const y = todayStart.getFullYear()-i;
+    yearCols.push([String(y), sumBetween(new Date(y,0,1), new Date(y+1,0,1)), i===0]);
+  }
 
   const viendoList = viendoOrdered();
   const forecasts = viendoList.map(s=>({s,f:forecastFor(s)}));
@@ -1341,23 +1423,26 @@ function renderPerfil(){
   html += `<div class="stat-card"><div class="label">Series</div><div class="value">${totalSeries}</div><div class="subvalue">${curso} en curso · ${sinComenzar} sin comenzar · ${fin} finalizadas</div></div>`;
   html += `<div class="stat-card"><div class="label">Pelis</div><div class="value">${totalMovies}</div><div class="subvalue">${movVistas} vistas · ${movPend} pendientes</div></div>`;
   html += `<div class="stat-card"><div class="label">Biblioteca</div><div class="value">${totalBooks}</div><div class="subvalue">${bookLeidos} leídos · ${bookPend} pendientes</div></div>`;
-  html += `<div class="stat-card"><div class="label">Horas vistas · series (${PERIOD_LABELS[statPeriod].toLowerCase()})</div><div class="value">${fmtDurationMin(seriesMinutes)}</div><div class="subvalue">${seriesEvents.length} capítulo${seriesEvents.length===1?'':'s'}</div></div>`;
+  html += `<div class="stat-card"><div class="label">Horas vistas · series (${PERIOD_LABELS[statPeriod].toLowerCase()})</div><div class="value">${fmtDurationMin(hoursMinutes)}</div><div class="subvalue">${hoursCount} capítulo${hoursCount===1?'':'s'}${undatedEvents.length? ' · '+undatedEvents.length+' sin fecha':''}</div></div>`;
 
-  html += `<div class="stat-card"><div class="label">Día de la semana</div><div class="subvalue" style="margin:0.1rem 0 0.4rem;">Del ${weekFrom} pasado al ${weekTo}</div>`;
-  weekRows.forEach(r=>{ html += `<div class="bar-row"><span class="lbl">${r.name}</span><div class="bar-track"><div class="bar-fill" style="width:${r.mins/maxWeekMin*100}%"></div></div><span class="val">${fmtHM(r.mins)}</span></div>`; });
-  html += `</div>`;
+  html += `<div class="section-label">Horas vistas por periodo · series</div>`;
+  html += vChart('Últimos 7 días', `Del ${weekFrom} pasado al ${weekTo}`, dayCols, fmtCompact);
+  html += vChart('Últimas 4 semanas', 'Semanas de lunes a domingo', weekCols, fmtCompact);
+  html += vChart('Últimos 6 meses', '', monthCols, fmtHoursOnly);
+  html += vChart('Últimos 5 años', '', yearCols, fmtHoursOnly);
+  html += `<div class="chart-note">Las barras rayadas son el periodo en curso, aún sin terminar.</div>`;
 
   html += `<div class="stat-card"><div class="label">Franja horaria</div>`;
   Object.entries(hourBuckets).forEach(([k,v])=>{ html += `<div class="bar-row"><span class="lbl">${k}</span><div class="bar-track"><div class="bar-fill" style="width:${v/maxHour*100}%"></div></div></div>`; });
   html += `</div>`;
 
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
-  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div></div>`;
+  html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div><div class="subvalue">${fmtFull(jointMinutesRemaining)} restantes</div></div>`;
   if(forecasts.length){
     html += `<div class="stat-card">` + forecasts.map(({s,f})=>{
       const n = f.episodesRemaining;
       const subTxt = n+' capítulo'+(n===1?'':'s')+' restante'+(n===1?'':'s');
-      return `<div class="forecast-item"><div class="fc-left"><b>${esc(s.title)}</b><div class="fc-sub">${subTxt}</div></div><div class="fc-right${f.days===null?' nodata':''}">${f.days!==null? endDateStr(f.days) : 'Sin datos suficientes'}</div></div>`;
+      return `<div class="forecast-item"><div class="fc-left"><b>${esc(s.title)}</b><div class="fc-sub">${subTxt}</div><div class="fc-sub">${fmtFull(f.minutesRemaining)} restantes</div></div><div class="fc-right${f.days===null?' nodata':''}">${f.days!==null? endDateStr(f.days) : 'Sin datos suficientes'}</div></div>`;
     }).join('') + `</div>`;
   }
 
