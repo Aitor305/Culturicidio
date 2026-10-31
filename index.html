@@ -63,10 +63,6 @@ main{padding:1rem;}
 .chip{font-size:0.62rem;padding:0.12rem 0.55rem;border-radius:10px;}
 .chip-gold{border:1px solid var(--mustard);color:var(--mustard);}
 .chip-outline{border:1px solid rgba(255,255,255,0.2);color:var(--ink-soft);}
-.chip-seasons{border:1px solid var(--st);color:var(--st);font-weight:500;}
-.chip-seasons.st-ended{--st:#FF4D4D;background:rgba(255,77,77,0.16);}
-.chip-seasons.st-unknown{--st:#FFB000;background:rgba(255,176,0,0.16);}
-.chip-seasons.st-known{--st:#3DDC84;background:rgba(61,220,132,0.16);}
 .pin-flag{font-size:0.62rem;color:var(--mustard);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;}
 .watch-btn{
   align-self:center; font-size:1rem; width:30px; height:30px; padding:0; border-radius:50%;
@@ -116,9 +112,16 @@ main{padding:1rem;}
 .detail-tab.active{background:var(--mustard);color:#100C08;border-color:var(--mustard);font-weight:600;}
 .detail-pane{display:none;font-size:0.82rem;line-height:1.6;color:var(--ink-soft);}
 .detail-pane.active{display:block;}
-.season-block{margin-bottom:0.9rem;}
-.season-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:0.95rem;color:var(--ink);margin-bottom:0.4rem;}
-.ep-row{display:flex;justify-content:space-between;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--hair);font-size:0.76rem;}
+.season-block{margin-bottom:0.2rem;}
+.season-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:0.95rem;color:var(--ink);}
+.season-head{display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.6rem 0;border-bottom:1px solid var(--hair);cursor:pointer;}
+.season-meta{display:flex;align-items:center;gap:0.4rem;font-size:0.68rem;color:var(--ink-soft);}
+.season-meta .chev{font-size:0.9rem;transition:transform .2s;}
+.season-block.open .season-meta .chev{transform:rotate(180deg);}
+.season-eps{display:none;padding-bottom:0.4rem;}
+.season-block.open .season-eps{display:block;}
+.ep-pane-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:0.92rem;color:var(--ink);margin-bottom:0.5rem;}
+.ep-row{display:flex;justify-content:space-between;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--hair);font-size:0.76rem;cursor:pointer;}
 .ep-row .name{color:var(--ink);}
 .ep-row .st{font-size:0.68rem;flex-shrink:0;}
 .ep-row-watch{width:22px;height:22px;border-radius:50%;background:var(--mustard);color:#100C08;border:none;font-size:0.75rem;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
@@ -140,6 +143,7 @@ main{padding:1rem;}
 .disc-item{cursor:pointer;position:relative;}
 .disc-item img{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:10px;background:linear-gradient(160deg,#3A2E1B,#1C150C);display:block;}
 .disc-item .t{font-size:0.68rem;margin-top:0.3rem;line-height:1.25;color:var(--ink);}
+.disc-item .why{font-size:0.58rem;color:var(--mustard);margin-top:0.1rem;line-height:1.2;}
 .disc-item .already{position:absolute;top:5px;right:5px;background:var(--teal);color:#100C08;font-size:0.55rem;padding:0.1rem 0.4rem;border-radius:6px;font-weight:600;}
 .disc-item .type-badge{position:absolute;top:5px;left:5px;font-size:0.55rem;padding:0.1rem 0.4rem;border-radius:6px;z-index:1;color:#100C08;font-weight:600;}
 .badge-serie{background:var(--teal);}
@@ -448,6 +452,7 @@ async function tmdbSeason(id, num){ return tmdb('tv/'+id+'/season/'+num,{}); }
 async function addSeriesFromTmdb(tmdbId){
   if(series.some(s=>s.tmdbId===tmdbId)) return;
   const d = await tmdbTvDetail(tmdbId);
+  let prov; try{ prov = providerNames(await tmdbProviders('tv', tmdbId)); }catch(e){ prov = undefined; }
   const seasons = [];
   for(const s of (d.seasons||[])){
     if(s.season_number===0) continue;
@@ -460,7 +465,7 @@ async function addSeriesFromTmdb(tmdbId){
   const newS = {
     id: uid('s_'), tmdbId, title:d.name, poster: d.poster_path? IMG+d.poster_path:'',
     overview:d.overview, cast:(d.credits?.cast||[]).slice(0,8).map(c=>c.name+' · '+c.character),
-    tmdb_status:d.status, seasons, addedAt:Date.now(), pinned:false, _wasFinalizada:false
+    tmdb_status:d.status, genres:(d.genres||[]).map(g=>g.name), providers:prov, seasons, addedAt:Date.now(), pinned:false, _wasFinalizada:false
   };
   series.push(newS);
   recomputeAll();
@@ -472,7 +477,7 @@ async function addMovieFromTmdb(tmdbId){
   movies.push({
     id: uid('m_'), tmdbId, title:d.title, poster: d.poster_path? IMG+d.poster_path:'',
     overview:d.overview, cast:(d.credits?.cast||[]).slice(0,8).map(c=>c.name+' · '+c.character),
-    releaseDate:d.release_date, runtime:d.runtime||100, watched:false, watchedAt:null, addedAt:Date.now()
+    releaseDate:d.release_date, runtime:d.runtime||100, genres:(d.genres||[]).map(g=>g.name), watched:false, watchedAt:null, addedAt:Date.now()
   });
   await saveMovies();
 }
@@ -729,7 +734,7 @@ function remainingChips(s, ep){
 function chipsHtml(s, e, withSeasons){
   const c = remainingChips(s, e);
   let html = `<div class="chip-row"><span class="chip chip-gold">${c.total} capítulo${c.total===1?'':'s'} restante${c.total===1?'':'s'}</span>`;
-  if(withSeasons) html += `<span class="chip chip-seasons st-${endState(s).state}">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
+  if(withSeasons) html += `<span class="chip chip-outline">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
   return html + `</div>`;
 }
 // inViendo: tarjeta de la sección "Viendo" (sin título del capítulo y con temporadas restantes)
@@ -771,35 +776,93 @@ function openSheet(html){ document.getElementById('sheetContent').innerHTML = ht
 function closeSheet(){ document.getElementById('overlay').classList.remove('open'); }
 function bindSheetCommon(){
   const c = document.querySelector('.sheet-close'); if(c) c.addEventListener('click', closeSheet);
-  document.querySelectorAll('.detail-tab').forEach(t=>t.addEventListener('click', ()=>{
-    document.querySelectorAll('.detail-tab').forEach(x=>x.classList.remove('active'));
-    document.querySelectorAll('.detail-pane').forEach(x=>x.classList.remove('active'));
-    t.classList.add('active');
-    document.getElementById('pane-'+t.dataset.p).classList.add('active');
-  }));
+  document.querySelectorAll('.detail-tab').forEach(t=>t.addEventListener('click', ()=> activateDetailTab(t.dataset.p)));
+}
+function activateDetailTab(p){
+  document.querySelectorAll('.detail-tab').forEach(x=>x.classList.toggle('active', x.dataset.p===p));
+  document.querySelectorAll('.detail-pane').forEach(x=>x.classList.toggle('active', x.id==='pane-'+p));
+}
+// Crea la pestaña "Episodio" si la ficha no la tenía (Finalizadas, Descubrir)
+function ensureEpTab(){
+  if(document.getElementById('pane-ep')) return;
+  const tabs = document.querySelector('.detail-tabs'); if(!tabs) return;
+  const b = document.createElement('button'); b.className='detail-tab'; b.dataset.p='ep'; b.textContent='Episodio';
+  b.addEventListener('click', ()=>activateDetailTab('ep'));
+  tabs.insertBefore(b, tabs.firstChild);
+  const pane = document.createElement('div'); pane.className='detail-pane'; pane.id='pane-ep';
+  const first = document.querySelector('.detail-pane'); first.parentNode.insertBefore(pane, first);
+}
+// Duración de los capítulos; avisa si entre temporadas hay >= 10 min de diferencia media
+function runtimeSummary(seasons){
+  const avgs = (seasons||[]).filter(sn=>sn.season_number>0).map(sn=>{
+    const r = (sn.episodes||[]).map(e=>e.runtime).filter(x=>x>0);
+    return r.length ? {n:sn.season_number, avg:r.reduce((a,b)=>a+b,0)/r.length} : null;
+  }).filter(Boolean);
+  if(!avgs.length) return '';
+  const segs = [];
+  avgs.forEach(a=>{
+    const cur = segs[segs.length-1];
+    if(cur && Math.abs(a.avg-cur.sum/cur.k)<10){ cur.sum+=a.avg; cur.k++; cur.to=a.n; return; }
+    segs.push({from:a.n, to:a.n, sum:a.avg, k:1});
+  });
+  const st = 'font-size:0.78rem;margin-top:0.4rem;';
+  if(segs.length===1) return `<p style="${st}"><b style="color:var(--ink);">Duración de los capítulos:</b> ~${Math.round(segs[0].sum/segs[0].k)} min</p>`;
+  return `<p style="${st}"><b style="color:var(--ink);">Duración de los capítulos:</b> varía según la temporada<br>`
+    + segs.map(g=>`${g.from===g.to?'Temporada '+g.from:'Temporadas '+g.from+'–'+g.to}: ~${Math.round(g.sum/g.k)} min`).join('<br>') + `</p>`;
+}
+let shownEp = null;
+function episodePaneHtml(s, ep){
+  return `<div class="ep-pane-title">T${ep.season_number} · E${ep.episode_number}${ep.name?' — '+esc(ep.name):''}</div>
+    <img class="poster-lg" src="${s.poster}">
+    <p>${esc(ep.overview)||'Sin resumen disponible.'}</p>
+    <p style="font-size:0.72rem;">Estreno: ${fmtDate(ep.air_date)}${ep.runtime?' · Duración: '+ep.runtime+' min':''}</p>
+    ${!ep.watched && ep.air_date && ep.air_date<=todayISO() ? `<button class="add-cta" id="markWatchedBtn">Marcar como visto</button>`:''}
+    ${ep.watched? `<p style="font-size:0.72rem;color:var(--teal-dark);">${ep.watchedAt?'Visto el '+fmtDateTime(ep.watchedAt):'Visto (fecha desconocida)'}</p>`:''}`;
+}
+function renderEpPane(sid, seasonNum, epNum){
+  const s = series.find(x=>x.id===sid); if(!s) return false;
+  const season = s.seasons.find(sn=>sn.season_number===seasonNum); if(!season) return false;
+  const ep0 = season.episodes.find(e=>e.episode_number===epNum); if(!ep0) return false;
+  const pane = document.getElementById('pane-ep'); if(!pane) return false;
+  shownEp = {sid, seasonNum, epNum};
+  pane.innerHTML = episodePaneHtml(s, Object.assign({season_number:seasonNum}, ep0));
+  const sub = document.getElementById('epSub'); if(sub) sub.textContent = 'T'+seasonNum+' · E'+epNum+(ep0.name?' — '+ep0.name:'');
+  const mb = document.getElementById('markWatchedBtn');
+  if(mb) mb.addEventListener('click', ()=>{ markWatchedThrough(sid, seasonNum, epNum); closeSheet(); });
+  return true;
+}
+// Elegir un capítulo cualquiera desde Temporadas y ver su ficha
+function showEpisodeInSheet(sid, seasonNum, epNum){
+  ensureEpTab();
+  if(renderEpPane(sid, seasonNum, epNum)){
+    activateDetailTab('ep');
+    const sc = document.getElementById('sheetContent'); if(sc){ sc.scrollTop = 0; if(sc.parentElement) sc.parentElement.scrollTop = 0; }
+  }
+}
+function toggleSeasonBlock(head){
+  const blk = head.closest('.season-block'); if(!blk) return;
+  const n = parseInt(blk.dataset.season);
+  blk.classList.toggle('open');
+  if(blk.classList.contains('open')) expandedSeasons.add(n); else expandedSeasons.delete(n);
 }
 function openEpisodeDetail(sid, seasonNum, epNum){
   const s = series.find(x=>x.id===sid); if(!s) return;
   const season = s.seasons.find(sn=>sn.season_number===seasonNum);
   const ep = season.episodes.find(e=>e.episode_number===epNum);
+  expandedSeasons = new Set();
   const html = `<button class="sheet-close">&times;</button>
     <h2>${esc(s.title)}</h2>
-    <div class="sheet-sub">T${seasonNum} · E${epNum} ${ep.name?'— '+esc(ep.name):''}</div>
+    <div class="sheet-sub" id="epSub">T${seasonNum} · E${epNum} ${ep.name?'— '+esc(ep.name):''}</div>
     <div class="detail-tabs">
       <button class="detail-tab active" data-p="ep">Episodio</button>
       <button class="detail-tab" data-p="info">Detalles</button>
       <button class="detail-tab" data-p="seasons">Temporadas</button>
     </div>
-    <div class="detail-pane active" id="pane-ep">
-      <img class="poster-lg" src="${s.poster}">
-      <p>${esc(ep.overview)||'Sin resumen disponible.'}</p>
-      <p style="font-size:0.72rem;">Estreno: ${fmtDate(ep.air_date)}</p>
-      ${!ep.watched && ep.air_date<=todayISO() ? `<button class="add-cta" id="markWatchedBtn">Marcar como visto</button>`:''}
-      ${ep.watched? `<p style="font-size:0.72rem;color:var(--teal-dark);">Visto el ${fmtDateTime(ep.watchedAt)}</p>`:''}
-    </div>
+    <div class="detail-pane active" id="pane-ep">${episodePaneHtml(s, Object.assign({season_number:seasonNum}, ep))}</div>
     <div class="detail-pane" id="pane-info">
       <p>${esc(s.overview)}</p>
       ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
+      ${runtimeSummary(s.seasons)}
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <div class="section-label">¿Dónde se puede ver?</div>
       <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">${s.tmdbId?'Cargando…':'Sin datos (serie añadida a mano).'}</p></div>
@@ -808,6 +871,7 @@ function openEpisodeDetail(sid, seasonNum, epNum){
     </div>
     <div class="detail-pane" id="pane-seasons">${seasonsHtml(s)}</div>`;
   openSheet(html);
+  shownEp = {sid, seasonNum, epNum};
   const mb = document.getElementById('markWatchedBtn');
   if(mb) mb.addEventListener('click', ()=>{ markWatchedThrough(sid, seasonNum, epNum); closeSheet(); });
   bindSeasonButtons(sid);
@@ -816,19 +880,28 @@ function openEpisodeDetail(sid, seasonNum, epNum){
   if(s.tmdbId) loadProviders('tv', s.tmdbId);
   loadRecommendationsFor('tv', s.tmdbId, s.title);
 }
+let expandedSeasons = new Set();
 function seasonsHtml(s){
-  return (s.seasons||[]).map(season=>`
-    <div class="season-block">
-      <div class="season-title">Temporada ${season.season_number}</div>
-      ${season.episodes.map(e=>`<div class="ep-row">
+  return (s.seasons||[]).map(season=>{
+    const n = season.episodes.length, seen = season.episodes.filter(e=>e.watched).length;
+    const open = expandedSeasons.has(season.season_number);
+    return `
+    <div class="season-block${open?' open':''}" data-season="${season.season_number}">
+      <div class="season-head"><div class="season-title">Temporada ${season.season_number}</div><div class="season-meta">${n} capítulo${n===1?'':'s'}${seen?' · '+seen+' visto'+(seen===1?'':'s'):''}<i class="ti ti-chevron-down chev"></i></div></div>
+      <div class="season-eps">
+      ${season.episodes.map(e=>`<div class="ep-row" data-season="${season.season_number}" data-ep="${e.episode_number}">
         <span class="name">E${e.episode_number} ${esc(e.name)}</span>
         ${e.watched
           ? `<span class="st" style="display:flex;align-items:center;gap:0.4rem;color:var(--teal-dark);">Vista${e.watchedAt?' · '+fmtDate(e.watchedAt):''}<button class="ep-row-unwatch" data-season="${season.season_number}" data-ep="${e.episode_number}" title="Marcar como no visto"><i class="ti ti-x"></i></button></span>`
           : `<span class="st" style="display:flex;align-items:center;gap:0.4rem;">${fmtDate(e.air_date)}<button class="ep-row-watch" data-season="${season.season_number}" data-ep="${e.episode_number}" title="Marcar como visto"><i class="ti ti-check"></i></button></span>`}
       </div>`).join('')}
-    </div>`).join('');
+      </div>
+    </div>`;
+  }).join('');
 }
 function bindSeasonButtons(sid){
+  document.querySelectorAll('#pane-seasons .season-head').forEach(h=>h.addEventListener('click', ()=>toggleSeasonBlock(h)));
+  document.querySelectorAll('#pane-seasons .ep-row').forEach(r=>r.addEventListener('click', ()=>showEpisodeInSheet(sid, parseInt(r.dataset.season), parseInt(r.dataset.ep))));
   document.querySelectorAll('.ep-row-watch').forEach(b=>{
     b.addEventListener('click', (ev)=>{
       ev.stopPropagation();
@@ -871,11 +944,11 @@ function refreshSeasonsPane(sid){
   const s = series.find(x=>x.id===sid);
   const pane = document.getElementById('pane-seasons');
   if(pane && s){ pane.innerHTML = seasonsHtml(s); bindSeasonButtons(sid); }
-  const epPane = document.getElementById('pane-ep');
-  if(epPane) epPane.innerHTML = '';
+  if(shownEp && shownEp.sid===sid && document.getElementById('pane-ep')) renderEpPane(sid, shownEp.seasonNum, shownEp.epNum);
 }
 function openSeriesFinalDetail(sid){
   const s = series.find(x=>x.id===sid); if(!s) return;
+  expandedSeasons = new Set(); shownEp = null;
   const html = `<button class="sheet-close">&times;</button>
     <h2>${esc(s.title)}</h2>
     <div class="detail-tabs">
@@ -886,6 +959,7 @@ function openSeriesFinalDetail(sid){
       <img class="poster-lg" src="${s.poster}">
       <p>${esc(s.overview)}</p>
       ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
+      ${runtimeSummary(s.seasons)}
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <div class="section-label">¿Dónde se puede ver?</div>
       <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">${s.tmdbId?'Cargando…':'Sin datos (serie añadida a mano).'}</p></div>
@@ -1072,7 +1146,7 @@ function discItemHtml(item){
     <span class="type-badge ${badge.cls}">${badge.label}</span>
     ${already?'<span class="already">En tu lista</span>':''}
     <img src="${item.poster}" onerror="this.style.background='var(--line)'">
-    <div class="t">${esc(item.title)}</div></div>`;
+    <div class="t">${esc(item.title)}</div>${item.why?`<div class="why">${esc(item.why)}</div>`:''}</div>`;
 }
 function bindDiscItems(){
   document.querySelectorAll('.disc-item').forEach(el=>{
@@ -1102,6 +1176,7 @@ async function openDiscoverDetail(id, type){
         <div class="detail-pane active" id="pane-info">
           <img class="poster-lg" src="${d.poster_path?IMG+d.poster_path:''}">
           <p>${esc(d.overview)||'Sin sinopsis.'}</p>
+          <div id="durationBlock"></div>
         </div>
         <div class="detail-pane" id="pane-extra">
           <div class="section-label" style="margin-top:0;">¿Dónde se puede ver?</div>
@@ -1120,7 +1195,7 @@ async function openDiscoverDetail(id, type){
         btn.textContent='Añadida'; btn.classList.add('added');
       });
       loadProviders('tv', id);
-      loadRecommendations((d.genres&&d.genres[0]&&d.genres[0].name)||d.name, 'tv', id);
+      loadRecs({type:'tv', id, overview:d.overview||'', genres:(d.genres||[]).map(g=>g.name), cast:(d.credits?.cast||[]).slice(0,10).map(c=>c.name), runtime:(d.episode_run_time&&d.episode_run_time[0])||0});
       loadDiscSeasons(id, (d.seasons||[]).filter(s=>s.season_number>0));
     } else if(type==='movie'){
       const d = await tmdbMovieDetail(id);
@@ -1152,7 +1227,7 @@ async function openDiscoverDetail(id, type){
         btn.textContent='Añadida'; btn.classList.add('added');
       });
       loadProviders('movie', id);
-      loadRecommendations((d.genres&&d.genres[0]&&d.genres[0].name)||d.title, 'movie', id);
+      loadRecs({type:'movie', id, overview:d.overview||'', genres:(d.genres||[]).map(g=>g.name), cast:(d.credits?.cast||[]).slice(0,10).map(c=>c.name), runtime:d.runtime||0});
     } else {
       const d = await gbDetail(id);
       const info = d.volumeInfo || {};
@@ -1172,20 +1247,43 @@ async function openDiscoverDetail(id, type){
         await addBookFromGoogle(id);
         btn.textContent='Añadida'; btn.classList.add('added');
       });
-      loadRecommendations((info.categories&&info.categories[0])||(info.authors&&info.authors[0])||info.title, 'book', id);
+      loadRecs({type:'book', id, overview:(info.description||'').replace(/<[^>]+>/g,''), genres:info.categories||[], authors:info.authors||[], pages:info.pageCount||0, cast:[]});
     }
   }catch(e){ document.getElementById('sheetContent').innerHTML = `<button class="sheet-close">&times;</button><p>No se pudo cargar la ficha.</p>`; bindSheetCommon(); }
 }
+let discSeasonData = [];
 async function loadDiscSeasons(tmdbId, seasons){
   const pane = document.getElementById('pane-seasons'); if(!pane) return;
   try{
     const details = await Promise.all(seasons.map(s=>tmdbSeason(tmdbId, s.season_number)));
-    pane.innerHTML = details.map(sd=>`
-      <div class="season-block">
-        <div class="season-title">Temporada ${sd.season_number}</div>
-        ${(sd.episodes||[]).map(e=>`<div class="ep-row"><span class="name">E${e.episode_number} ${esc(e.name)}</span><span class="st">${fmtDate(e.air_date)}</span></div>`).join('')}
-      </div>`).join('');
+    discSeasonData = details;
+    const db = document.getElementById('durationBlock');
+    if(db) db.innerHTML = runtimeSummary(details.map(sd=>({season_number:sd.season_number, episodes:sd.episodes||[]})));
+    pane.innerHTML = details.map(sd=>{
+      const n = (sd.episodes||[]).length;
+      return `
+      <div class="season-block" data-season="${sd.season_number}">
+        <div class="season-head"><div class="season-title">Temporada ${sd.season_number}</div><div class="season-meta">${n} capítulo${n===1?'':'s'}<i class="ti ti-chevron-down chev"></i></div></div>
+        <div class="season-eps">
+        ${(sd.episodes||[]).map(e=>`<div class="ep-row" data-season="${sd.season_number}" data-ep="${e.episode_number}"><span class="name">E${e.episode_number} ${esc(e.name)}</span><span class="st">${fmtDate(e.air_date)}</span></div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+    pane.querySelectorAll('.season-head').forEach(h=>h.addEventListener('click', ()=>{ const blk=h.closest('.season-block'); blk.classList.toggle('open'); }));
+    pane.querySelectorAll('.ep-row').forEach(r=>r.addEventListener('click', ()=>showDiscEpisode(parseInt(r.dataset.season), parseInt(r.dataset.ep))));
   }catch(e){ pane.innerHTML = `<p style="font-size:0.75rem;color:var(--ink-soft);">No se pudieron cargar los episodios.</p>`; }
+}
+function showDiscEpisode(seasonNum, epNum){
+  const sd = discSeasonData.find(x=>x.season_number===seasonNum); if(!sd) return;
+  const e = (sd.episodes||[]).find(x=>x.episode_number===epNum); if(!e) return;
+  ensureEpTab();
+  const poster = document.querySelector('#pane-info .poster-lg');
+  document.getElementById('pane-ep').innerHTML = `<div class="ep-pane-title">T${seasonNum} · E${epNum}${e.name?' — '+esc(e.name):''}</div>
+    ${poster?`<img class="poster-lg" src="${poster.getAttribute('src')}">`:''}
+    <p>${esc(e.overview)||'Sin resumen disponible.'}</p>
+    <p style="font-size:0.72rem;">Estreno: ${fmtDate(e.air_date)}${e.runtime?' · Duración: '+e.runtime+' min':''}</p>`;
+  activateDetailTab('ep');
+  const sc = document.getElementById('sheetContent'); if(sc){ sc.scrollTop = 0; if(sc.parentElement) sc.parentElement.scrollTop = 0; }
 }
 async function loadProviders(type, id){
   const block = document.getElementById('providersBlock'); if(!block) return;
@@ -1211,35 +1309,361 @@ function providersHtml(p){
       </div>`).join('')}</div>`;
 }
 const EXTRA_TAB_LABEL = 'Descubre más';
-// Recomendaciones para una serie/peli que ya está en tu lista (con o sin datos de TMDB)
-async function loadRecommendationsFor(type, tmdbId, title){
-  let seed = title;
-  if(tmdbId && settings.tmdbKey){
-    try{
-      const d = type==='tv' ? await tmdbTvDetail(tmdbId) : await tmdbMovieDetail(tmdbId);
-      seed = (d.genres && d.genres[0] && d.genres[0].name) || title;
-    }catch(e){}
-  }
-  loadRecommendations(seed, type, tmdbId || null);
+
+/* ---------------- PERFIL / STATS ---------------- */
+/* ================= NUEVO v30: ENRIQUECIMIENTO, PIZZAS, MARATONES, RECOMENDACIONES POR CONTENIDO ================= */
+
+// ---- Géneros y plataformas guardados en cada serie/peli (se completan solos para lo ya añadido)
+function providerNames(p){
+  if(!p) return [];
+  const g = p.flatrate || p.ads || p.free || [];
+  return g.map(x=>x.provider_name);
 }
-async function loadRecommendations(seedQuery, excludeType, excludeId){
-  const block = document.getElementById('similarBlock'); if(!block || !seedQuery) return;
-  block.innerHTML = `<div class="section-label">Te podría interesar</div><p style="font-size:0.75rem;color:var(--ink-soft);">Buscando…</p>`;
-  let items = [];
-  if(settings.tmdbKey){
-    try{ const r = await tmdbSearchMulti(seedQuery); items = items.concat(r.map(normTmdb)); }catch(e){}
+let enrichRunning = false, enrichDone = false, enrichPending = 0;
+async function enrichItem(kind, it){
+  if(!it.tmdbId) return false;
+  let changed = false;
+  if(it.genres===undefined){
+    const d = await tmdb(kind+'/'+it.tmdbId, {});
+    it.genres = (d.genres||[]).map(g=>g.name);
+    changed = true;
   }
-  try{ const gb = await gbSearch(seedQuery); items = items.concat(gb.map(normBook)); }catch(e){}
-  items = items.filter(i=> !(i.type===excludeType && i.id===excludeId)).slice(0,9);
-  if(items.length===0){ block.innerHTML = ''; return; }
-  block.innerHTML = `<div class="section-label">Te podría interesar</div><div class="disc-grid">${items.map(discItemHtml).join('')}</div>`;
-  block.querySelectorAll('.disc-item').forEach(el=>{
+  if(kind==='tv' && it.providers===undefined){
+    const p = await tmdbProviders('tv', it.tmdbId);
+    it.providers = providerNames(p);
+    changed = true;
+  }
+  return changed;
+}
+async function enrichAll(){
+  if(enrichRunning || enrichDone || !settings.tmdbKey) return;
+  const todo = [];
+  series.forEach(s=>{ if(s.tmdbId && (s.genres===undefined || s.providers===undefined)) todo.push(['tv',s]); });
+  movies.forEach(m=>{ if(m.tmdbId && m.genres===undefined) todo.push(['movie',m]); });
+  if(!todo.length){ enrichDone = true; return; }
+  enrichRunning = true; enrichPending = todo.length;
+  let anyChange = false;
+  for(let i=0;i<todo.length;i+=5){
+    const batch = todo.slice(i,i+5);
+    const res = await Promise.all(batch.map(([k,it])=> enrichItem(k,it).catch(()=>false)));
+    if(res.some(Boolean)) anyChange = true;
+    enrichPending = Math.max(0, todo.length-(i+5));
+  }
+  enrichRunning = false; enrichDone = true; enrichPending = 0;
+  if(anyChange){ await saveSeries(); await saveMovies(); }
+  if(activeTab==='perfil') renderPerfil();
+}
+
+// ---- Gráfico de pizza (SVG) con el número dentro de cada porción
+const PIE_COLORS = ['#FFB000','#3DDC84','#4DA3FF','#FF6B6B','#B084FF','#FF8A3D','#2EC4B6','#8A7F6A'];
+function pieCard(title, subtitle, entries){
+  const total = entries.reduce((a,e)=>a+e[1],0);
+  const head = `<div class="label">${title}</div>${subtitle?`<div class="subvalue" style="margin-top:0.1rem;">${subtitle}</div>`:''}`;
+  if(!total) return `<div class="stat-card">${head}<div class="subvalue" style="margin-top:0.6rem;">Sin datos en este periodo.</div></div>`;
+  let data = entries.slice().sort((a,b)=>b[1]-a[1]);
+  if(data.length>8){
+    const rest = data.slice(7).reduce((a,e)=>a+e[1],0);
+    data = data.slice(0,7).concat([['Otros',rest]]);
+  }
+  const cx=100, cy=100, r=92;
+  let svg = `<svg viewBox="0 0 200 200" style="width:200px;height:200px;display:block;margin:0.7rem auto 0.4rem;">`;
+  if(data.length===1){
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${PIE_COLORS[0]}"/>`;
+    svg += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Poppins,sans-serif" font-weight="700" font-size="26" fill="#100C08">${data[0][1]}</text>`;
+  } else {
+    let ang = -Math.PI/2;
+    data.forEach(([name,n],i)=>{
+      const frac = n/total, a2 = ang + frac*2*Math.PI;
+      const x1 = cx+r*Math.cos(ang), y1 = cy+r*Math.sin(ang), x2 = cx+r*Math.cos(a2), y2 = cy+r*Math.sin(a2);
+      const large = frac>0.5 ? 1 : 0;
+      const col = name==='Otros' ? PIE_COLORS[7] : PIE_COLORS[i%7];
+      svg += `<path d="M${cx} ${cy} L${x1.toFixed(2)} ${y1.toFixed(2)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${col}" stroke="#1A150E" stroke-width="2"/>`;
+      if(frac>=0.06){
+        const mid = (ang+a2)/2, lr = r*0.62;
+        svg += `<text x="${(cx+lr*Math.cos(mid)).toFixed(2)}" y="${(cy+lr*Math.sin(mid)).toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-family="Poppins,sans-serif" font-weight="700" font-size="16" fill="#100C08">${n}</text>`;
+      }
+      ang = a2;
+    });
+  }
+  svg += `</svg>`;
+  const legend = data.map(([name,n],i)=>{
+    const col = name==='Otros' ? PIE_COLORS[7] : PIE_COLORS[i%7];
+    return `<div class="forecast-item"><div class="fc-left" style="display:flex;align-items:center;gap:0.5rem;"><span style="width:10px;height:10px;border-radius:50%;background:${col};flex:none;"></span><b>${esc(name)}</b></div><div class="fc-right">${n} · ${Math.round(n/total*100)}%</div></div>`;
+  }).join('');
+  return `<div class="stat-card">${head}${svg}${legend}</div>`;
+}
+
+// ---- Estadísticas de plataformas y géneros (respetan el filtro de periodo)
+function seriesActiveIn(s, cutoff){
+  return flatEpisodes(s).some(e=> e.watched && (e.watchedAt ? e.watchedAt>=cutoff : cutoff===0));
+}
+function platformCounts(cutoff){
+  const m = {};
+  series.forEach(s=>{
+    if(!seriesActiveIn(s, cutoff)) return;
+    const name = (s.providers && s.providers[0]) || 'Sin plataforma';
+    m[name] = (m[name]||0)+1;
+  });
+  return Object.entries(m);
+}
+function genreCounts(cutoff){
+  const m = {};
+  const add = list => (list||[]).forEach(g=>{ m[g] = (m[g]||0)+1; });
+  series.forEach(s=>{ if(seriesActiveIn(s, cutoff)) add(s.genres); });
+  movies.forEach(mv=>{ if(mv.watched && (mv.watchedAt ? mv.watchedAt>=cutoff : cutoff===0)) add(mv.genres); });
+  return Object.entries(m);
+}
+
+// ---- Maratones: máximo tiempo visto de una serie en cualquier ventana de 24 h (últimos 6 meses)
+function marathonFor(s, cutoff){
+  const evs = flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cutoff)
+    .map(e=>({t:e.watchedAt, m:e.runtime||30})).sort((a,b)=>a.t-b.t);
+  let best = 0, j = 0, sum = 0;
+  for(let i=0;i<evs.length;i++){
+    sum += evs[i].m;
+    while(evs[i].t - evs[j].t >= 86400000){ sum -= evs[j].m; j++; }
+    if(sum>best) best = sum;
+  }
+  return best;
+}
+function marathonRows(){
+  const cutoff = Date.now()-182*86400000;
+  return series.map(s=>({title:s.title, min:marathonFor(s,cutoff)})).filter(x=>x.min>0).sort((a,b)=>b.min-a.min);
+}
+function marathonCard(){
+  const rows = marathonRows();
+  if(!rows.length) return `<div class="stat-card"><div class="subvalue">Aún no hay capítulos con fecha en los últimos 6 meses.</div></div>`;
+  return `<div class="stat-card"><div class="forecast-item" style="font-size:0.66rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.05em;"><div>Serie</div><div>Máximo en 24 h</div></div>`
+    + rows.map(r=>`<div class="forecast-item"><div class="fc-left"><b>${esc(r.title)}</b></div><div class="fc-right">${fmtHM(r.min)}</div></div>`).join('') + `</div>`;
+}
+
+/* ---------------- RECOMENDACIONES POR CONTENIDO ---------------- */
+const STOP_ES = new Set(('de la que el en y a los del se las por un para con no una su al lo como mas pero sus le ya o este si porque esta entre cuando muy sin sobre tambien me hasta hay donde quien desde todo nos durante todos uno les ni contra otros ese eso ante ellos e esto mi antes algunos que unos yo otro otras otra el tanto esa estos mucho quienes nada muchos cual poco ella estar estas algunas algo nosotros mis tu te ti tu tus ellas nosotras vosotros vosotras os mio mia mios mias tuyo tuya suyo suya nuestro nuestra son fue era ser ha han hay esta estan tiene tienen tras cada asi aun mas menos solo luego pronto ahora aqui alli bien mal puede pueden debe deben hace hacen nueva nuevo primer primera segunda segundo serie pelicula libro historia novela temporada capitulo anos ano vida mundo dia dias vez veces cosas cosa lugar parte grupo junto mismo misma mismos otras').split(' '));
+function normTxt(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function stemOf(w){ return w.slice(0,6); }
+function tokens(text){
+  const out = [];
+  normTxt(text).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4 && !STOP_ES.has(w) && !/^\d+$/.test(w)) out.push(stemOf(w)); });
+  return out;
+}
+// Palabras clave de una sinopsis (sin nombres propios) para buscar libros u otros títulos
+function keywordsOf(text, n){
+  const cnt = {}, surf = {};
+  const re = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{5,}/g; let m;
+  const src = String(text||'');
+  while((m = re.exec(src))){
+    const w = m[0];
+    const prev = src.slice(0,m.index).trim().slice(-1);
+    const isCap = w[0]===w[0].toUpperCase() && w[0]!==w[0].toLowerCase();
+    if(isCap && prev && !'.!?¿¡:"«'.includes(prev)) continue;   // nombre propio
+    const nw = normTxt(w);
+    if(STOP_ES.has(nw)) continue;
+    const st = stemOf(nw);
+    cnt[st] = (cnt[st]||0)+1; if(!surf[st]) surf[st] = w.toLowerCase();
+  }
+  return Object.keys(cnt).sort((a,b)=> (cnt[b]*3+b.length) - (cnt[a]*3+a.length)).slice(0,n).map(k=>surf[k]);
+}
+function tfidfSims(seedText, texts){
+  const docs = [tokens(seedText)].concat(texts.map(tokens));
+  const df = {};
+  docs.forEach(d=>{ new Set(d).forEach(t=>{ df[t] = (df[t]||0)+1; }); });
+  const N = docs.length;
+  const vec = d=>{
+    const tf = {}; d.forEach(t=>{ tf[t]=(tf[t]||0)+1; });
+    const v = {}; let norm = 0;
+    Object.keys(tf).forEach(t=>{ const w = (1+Math.log(tf[t]))*Math.log(1+N/df[t]); v[t]=w; norm += w*w; });
+    return {v, norm:Math.sqrt(norm)};
+  };
+  const sv = vec(docs[0]);
+  return docs.slice(1).map(d=>{
+    if(!d.length || !sv.norm) return 0;
+    const cv = vec(d); let dot = 0;
+    Object.keys(cv.v).forEach(t=>{ if(sv.v[t]) dot += sv.v[t]*cv.v[t]; });
+    return dot/(sv.norm*cv.norm||1);
+  });
+}
+// Géneros comparables entre series, pelis y libros: "Ciencia ficción y fantasía" -> {ciencia ficcion, fantasia}
+const CAT_EN_ES = {'science fiction':'ciencia ficcion','fantasy':'fantasia','mystery':'misterio','crime':'crimen','detective':'crimen','thriller':'suspense','suspense':'suspense','horror':'terror','romance':'romance','history':'historia','historical':'historia','war':'belica','comedy':'comedia','humor':'comedia','adventure':'aventura','action':'accion','drama':'drama','family':'familia','biography':'documental','western':'western','music':'musica','animation':'animacion'};
+function genreParts(name){
+  const n = normTxt(name);
+  const parts = new Set();
+  n.split(/ y | & |, | \/ /).forEach(p=>{ p = p.trim(); if(p) parts.add(p); });
+  Object.keys(CAT_EN_ES).forEach(k=>{ if(n.includes(k)) parts.add(CAT_EN_ES[k]); });
+  if(n==='suspense' || n==='thriller') { parts.add('suspense'); }
+  return parts;
+}
+function partsOfList(list){ const s = new Set(); (list||[]).forEach(g=>genreParts(g).forEach(p=>s.add(p))); return s; }
+function diceSets(a,b){
+  if(!a.size || !b.size) return 0;
+  let inter = 0; a.forEach(x=>{ if(b.has(x)) inter++; });
+  return 2*inter/(a.size+b.size);
+}
+let genreMapCache = null;
+async function tmdbGenreMaps(){
+  if(genreMapCache) return genreMapCache;
+  const res = {tv:{}, movie:{}};
+  await Promise.all(['tv','movie'].map(async t=>{
+    try{ const d = await tmdb('genre/'+t+'/list',{}); (d.genres||[]).forEach(g=>{ res[t][g.id]=g.name; }); }catch(e){}
+  }));
+  genreMapCache = res; return res;
+}
+function idsForParts(maps, type, partSet){
+  const ids = [];
+  Object.keys(maps[type]).forEach(id=>{
+    const p = genreParts(maps[type][id]);
+    let hit = false; p.forEach(x=>{ if(partSet.has(x)) hit = true; });
+    if(hit) ids.push(id);
+  });
+  return ids;
+}
+async function gbQuery(q){
+  try{
+    const res = await fetch('https://www.googleapis.com/books/v1/volumes?q='+encodeURIComponent(q)+'&maxResults=20&printType=books&langRestrict=es&orderBy=relevance');
+    if(res.ok){ const d = await res.json(); return d.items || []; }
+  }catch(e){}
+  return [];
+}
+const recsCache = {};
+// seed = {type:'tv'|'movie'|'book', id, overview, genres:[nombres], cast:[nombres], runtime, authors:[], pages}
+async function buildRecommendations(seed, maps){
+  const owned = it => it.type==='tv' ? series.some(s=>s.tmdbId===it.id) : it.type==='movie' ? movies.some(m=>m.tmdbId===it.id) : books.some(b=>b.gbId===it.id);
+  const seedParts = partsOfList(seed.genres);
+  const kws = keywordsOf(seed.overview, 6);
+  const pool = {};
+  const addTmdb = (type, list)=>{
+    (list||[]).forEach(r=>{
+      if(!r || !r.poster_path || !r.id) return;
+      const key = type+':'+r.id; if(pool[key]) return;
+      const names = (r.genre_ids||[]).map(g=>maps[type][g]).filter(Boolean);
+      pool[key] = {type, id:r.id, title:r.title||r.name, poster:IMG+r.poster_path, overview:r.overview||'', genres:names,
+        quality:(r.vote_count>=100? Math.min(1,(r.vote_average||0)/10):0)};
+    });
+  };
+  const jobs = [];
+  if(settings.tmdbKey){
+    const other = seed.type==='tv' ? 'movie' : 'tv';
+    if(seed.type==='tv' || seed.type==='movie'){
+      const own = seed.type;
+      jobs.push(tmdb(own+'/'+seed.id+'/recommendations',{}).then(d=>addTmdb(own,d.results)).catch(()=>{}));
+      jobs.push(tmdb(own+'/'+seed.id+'/similar',{}).then(d=>addTmdb(own,d.results)).catch(()=>{}));
+    }
+    const types = seed.type==='book' ? ['tv','movie'] : [seed.type, other];
+    types.forEach(t=>{
+      const ids = idsForParts(maps, t, seedParts).slice(0,2);
+      if(ids.length){
+        jobs.push(tmdb('discover/'+t,{with_genres:ids.join(','), sort_by:'vote_count.desc', 'vote_count.gte':300}).then(d=>addTmdb(t,d.results)).catch(()=>{}));
+        jobs.push(tmdb('discover/'+t,{with_genres:ids.join('|'), sort_by:'popularity.desc', 'vote_count.gte':100}).then(d=>addTmdb(t,d.results)).catch(()=>{}));
+      }
+      if(seed.type==='book' && kws.length){
+        jobs.push(tmdb('search/'+t,{query:kws.slice(0,2).join(' ')}).then(d=>addTmdb(t,d.results)).catch(()=>{}));
+      }
+    });
+  }
+  // Libros: buscados con las palabras clave de la sinopsis (no con el título)
+  const bookPool = [];
+  const catWord = seed.genres && seed.genres[0] ? genreParts(seed.genres[0]).values().next().value : '';
+  const gbJobs = [];
+  if(kws.length>=2) gbJobs.push(gbQuery(kws.slice(0,4).join(' ')));
+  if(kws.length>=1) gbJobs.push(gbQuery((catWord?catWord+' ':'')+kws.slice(0,2).join(' ')));
+  if(seed.type==='book' && seed.authors && seed.authors[0]) gbJobs.push(gbQuery('inauthor:"'+seed.authors[0]+'"'));
+  jobs.push(Promise.all(gbJobs).then(lists=>{
+    lists.forEach(items=>{
+      items.forEach((it,idx)=>{
+        const info = it.volumeInfo||{};
+        const cover = info.imageLinks ? (info.imageLinks.thumbnail||info.imageLinks.smallThumbnail||'').replace('http://','https://') : '';
+        if(!cover) return;
+        if(bookPool.some(b=>b.id===it.id)) return;
+        if(seed.type==='book' && seed.id===it.id) return;
+        bookPool.push({type:'book', id:it.id, title:info.title||'Sin título', poster:cover, overview:(info.description||'').replace(/<[^>]+>/g,''),
+          genres:info.categories||[], authors:info.authors||[], pages:info.pageCount||0, rel:1-idx/Math.max(items.length,1), quality:0});
+      });
+    });
+  }).catch(()=>{}));
+  await Promise.all(jobs);
+  bookPool.forEach(b=>{ pool['book:'+b.id] = b; });
+
+  let cands = Object.values(pool).filter(c=> !(c.type===seed.type && c.id===seed.id) && !owned(c));
+  if(!cands.length) return [];
+  const sims = tfidfSims(seed.overview||'', cands.map(c=>c.overview));
+  cands.forEach((c,i)=>{
+    c.text = sims[i];
+    c.genre = diceSets(seedParts, partsOfList(c.genres));
+    c.cast = 0; c.rt = 0; c.sharedCast = [];
+    const relW = c.type!=='book' ? 0 : ((c.text>0||c.genre>0) ? 0.10 : (c.overview ? 0 : 0.06));
+    c.score = 0.40*c.text + 0.27*c.genre + 0.07*c.quality + relW*(c.rel||0);
+    if(seed.type==='book' && c.type==='book' && seed.authors && c.authors && c.authors.some(a=>seed.authors.includes(a))){ c.cast = 1; c.score += 0.13; }
+  });
+  cands.sort((a,b)=>b.score-a.score);
+  // Segunda fase: reparto y duración de los mejores candidatos de TMDB
+  const seedCast = new Set((seed.cast||[]).map(normTxt));
+  const top = cands.slice(0,14).filter(c=>c.type!=='book');
+  await Promise.all(top.map(async c=>{
+    try{
+      const d = c.type==='tv' ? await tmdbTvDetail(c.id) : await tmdbMovieDetail(c.id);
+      const names = (d.credits&&d.credits.cast||[]).slice(0,10).map(x=>x.name);
+      c.sharedCast = names.filter(n=>seedCast.has(normTxt(n)));
+      c.cast = Math.min(c.sharedCast.length/2,1);
+      const rt = c.type==='tv' ? ((d.episode_run_time&&d.episode_run_time[0]) || (d.last_episode_to_air&&d.last_episode_to_air.runtime) || 0) : (d.runtime||0);
+      if(c.type===seed.type && seed.runtime && rt) c.rt = 1-Math.min(Math.abs(rt-seed.runtime)/Math.max(rt,seed.runtime),1);
+      if(!c.genres.length && d.genres) c.genres = d.genres.map(g=>g.name);
+      c.score = 0.40*c.text + 0.27*diceSets(seedParts, partsOfList(c.genres)) + 0.13*c.cast + 0.08*c.rt + 0.07*c.quality;
+    }catch(e){}
+  }));
+  cands.sort((a,b)=>b.score-a.score);
+  // Mezcla de tipos: como mucho 4 de cada
+  const out = [], per = {tv:0,movie:0,book:0};
+  cands.forEach(c=>{ if(out.length<9 && per[c.type]<4 && c.score>0.08){ out.push(c); per[c.type]++; } });
+  cands.forEach(c=>{ if(out.length<9 && !out.includes(c) && c.score>0.08) out.push(c); });
+  out.forEach(c=>{
+    const why = [];
+    const shared = []; const sp = seedParts;
+    (c.genres||[]).forEach(g=>{ genreParts(g).forEach(p=>{ if(sp.has(p) && !shared.includes(g)) shared.push(g); }); });
+    if(shared.length) why.push(shared.slice(0,2).join(', '));
+    if(c.sharedCast && c.sharedCast.length) why.push(c.sharedCast[0]);
+    c.why = why.join(' · ');
+  });
+  return out;
+}
+async function loadRecs(seed){
+  const block = document.getElementById('similarBlock'); if(!block) return;
+  block.innerHTML = `<div class="section-label">Te podría interesar</div><p style="font-size:0.75rem;color:var(--ink-soft);">Analizando sinopsis, géneros y reparto…</p>`;
+  const key = seed.type+':'+seed.id;
+  let items = recsCache[key];
+  if(!items){
+    try{
+      const maps = settings.tmdbKey ? await tmdbGenreMaps() : {tv:{},movie:{}};
+      items = await buildRecommendations(seed, maps);
+      if(items.length) recsCache[key] = items;
+    }catch(e){ items = []; }
+  }
+  const stillThere = document.getElementById('similarBlock');
+  if(!stillThere) return;
+  if(!items.length){ stillThere.innerHTML = ''; return; }
+  stillThere.innerHTML = `<div class="section-label">Te podría interesar</div><div class="disc-grid">${items.map(discItemHtml).join('')}</div>`;
+  stillThere.querySelectorAll('.disc-item').forEach(el=>{
     const id = el.dataset.type==='book' ? el.dataset.id : parseInt(el.dataset.id);
     el.addEventListener('click', ()=> openDiscoverDetail(id, el.dataset.type));
   });
 }
+function castNames(list){ return (list||[]).map(c=> typeof c==='string' ? c.split(' · ')[0] : (c&&c.name)||'').filter(Boolean); }
+// Para series/pelis que ya están en tu lista
+async function loadRecommendationsFor(type, tmdbId, title){
+  const local = type==='tv' ? series.find(s=>s.tmdbId===tmdbId) : movies.find(m=>m.tmdbId===tmdbId);
+  const seed = {type, id:tmdbId||('local:'+title), overview:(local&&local.overview)||'', genres:(local&&local.genres)||[], cast:castNames(local&&local.cast), runtime:0};
+  if(local && type==='tv'){ const eps = flatEpisodes(local); seed.runtime = eps.length ? eps[0].runtime||0 : 0; }
+  if(local && type==='movie') seed.runtime = local.runtime||0;
+  if(tmdbId && settings.tmdbKey){
+    try{
+      const d = type==='tv' ? await tmdbTvDetail(tmdbId) : await tmdbMovieDetail(tmdbId);
+      seed.overview = d.overview || seed.overview;
+      seed.genres = (d.genres||[]).map(g=>g.name);
+      seed.cast = (d.credits&&d.credits.cast||[]).slice(0,10).map(c=>c.name);
+      seed.runtime = type==='tv' ? ((d.episode_run_time&&d.episode_run_time[0])||seed.runtime) : (d.runtime||seed.runtime);
+    }catch(e){}
+  }
+  loadRecs(seed);
+}
 
-/* ---------------- PERFIL / STATS ---------------- */
 const PERIODS = {siempre:null, '1y':365, '6m':182, '1m':30, '2w':14, '1w':7};
 const PERIOD_LABELS = {siempre:'Siempre','1y':'Último año','6m':'6 meses','1m':'Último mes','2w':'2 semanas','1w':'Última semana'};
 function cutoffFor(period){ const days=PERIODS[period]; if(!days) return 0; return Date.now()-days*86400000; }
@@ -1348,6 +1772,7 @@ function viendoOrdered(){
 
 function renderPerfil(){
   const main = document.getElementById('main');
+  enrichAll();
   const cutoff = cutoffFor(statPeriod);
   const events = allWatchedEvents(cutoff);               // series + pelis (solo para la franja horaria)
   const seriesEvents = seriesWatchedEvents(cutoff);      // solo series (horas vistas)
@@ -1408,9 +1833,11 @@ function renderPerfil(){
   const forecasts = viendoList.map(s=>({s,f:forecastFor(s)}));
   const totalEpsLeft = forecasts.reduce((a,x)=>a+x.f.episodesRemaining,0);
   let jointMinutesWatched=0, jointMinutesRemaining=0;
+  const cut6 = Date.now()-182*86400000;
+  series.forEach(s=>{
+    jointMinutesWatched += flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cut6).reduce((a,e)=>a+(e.runtime||30),0);
+  });
   viendoList.forEach(s=>{
-    const cut = Date.now()-182*86400000;
-    jointMinutesWatched += flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cut).reduce((a,e)=>a+(e.runtime||30),0);
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });
   const jointForecast = jointMinutesWatched>0 ? jointMinutesRemaining/(jointMinutesWatched/182) : null;
@@ -1435,6 +1862,15 @@ function renderPerfil(){
   html += `<div class="stat-card"><div class="label">Franja horaria</div>`;
   Object.entries(hourBuckets).forEach(([k,v])=>{ html += `<div class="bar-row"><span class="lbl">${k}</span><div class="bar-track"><div class="bar-fill" style="width:${v/maxHour*100}%"></div></div></div>`; });
   html += `</div>`;
+
+  html += `<div class="section-label">Plataformas y géneros (${PERIOD_LABELS[statPeriod].toLowerCase()})</div>`;
+  if(enrichRunning) html += `<div class="chart-note">Completando datos de ${enrichPending>0?enrichPending:'tus'} títulos…</div>`;
+  html += pieCard('Plataformas · series', 'Series con capítulos vistos, según la plataforma donde están hoy en España', platformCounts(cutoff));
+  html += pieCard('Géneros vistos · series y pelis', 'Cada título cuenta en todos sus géneros', genreCounts(cutoff));
+
+  html += `<div class="section-label">Maratones · últimos 6 meses</div>`;
+  html += marathonCard();
+  html += `<div class="chart-note">Mayor tiempo visto de cada serie en cualquier periodo de 24 horas. Los capítulos marcados de golpe con una fecha cuentan como vistos seguidos.</div>`;
 
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
   html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div><div class="subvalue">${fmtFull(jointMinutesRemaining)} restantes</div></div>`;
