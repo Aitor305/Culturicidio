@@ -121,6 +121,10 @@ main{padding:1rem;}
 .season-eps{display:none;padding-bottom:0.4rem;}
 .season-block.open .season-eps{display:block;}
 .soft-link{background:none;border:none;color:var(--ink-soft);font-family:inherit;font-size:0.72rem;text-decoration:underline;cursor:pointer;display:block;margin:0.8rem auto 0;padding:0.3rem;}
+.chip-seasons{background:transparent;border:1px solid var(--st);color:var(--st);font-weight:500;}
+.chip-seasons.st-ended{--st:#FF4D4D;}
+.chip-seasons.st-unknown{--st:#FFB000;}
+.chip-seasons.st-known{--st:#3DDC84;}
 .ep-pane-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:0.92rem;color:var(--ink);margin-bottom:0.5rem;}
 .ep-row{display:flex;justify-content:space-between;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--hair);font-size:0.76rem;cursor:pointer;}
 .ep-row .name{color:var(--ink);}
@@ -703,7 +707,7 @@ function renderSeriesTab(){
     }
     html += `<div class="section-label-strong">Sin comenzar</div>`;
     if(sinComenzar.length===0){ html += `<div class="empty">No tienes series sin empezar.</div>`; }
-    else html += sinComenzar.map(s=>{ const ep=nextEpisodeOf(s)||flatEpisodes(s)[0]; return ep? epCardHtml(s,ep,'notstarted',false,false,false,true):''; }).join('');
+    else html += sinComenzar.map(s=>{ const ep=nextEpisodeOf(s)||flatEpisodes(s)[0]; return ep? epCardHtml(s,ep,'notstarted',false,false,false,'sin'):''; }).join('');
     main.innerHTML = html;
     if(watchedFlat.length){
       setTimeout(()=>{ document.getElementById('viendoAnchor')?.scrollIntoView({block:'start'}); }, 0);
@@ -772,7 +776,7 @@ function remainingChips(s, ep){
 function chipsHtml(s, e, withSeasons){
   const c = remainingChips(s, e);
   let html = `<div class="chip-row"><span class="chip chip-gold">${c.total} capítulo${c.total===1?'':'s'} restante${c.total===1?'':'s'}</span>`;
-  if(withSeasons) html += `<span class="chip chip-outline">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
+  if(withSeasons) html += `<span class="chip ${withSeasons==='sin' ? 'chip-seasons st-'+endState(s).state : 'chip-outline'}">${c.seasons} temporada${c.seasons===1?'':'s'} restante${c.seasons===1?'':'s'}</span>`;
   return html + `</div>`;
 }
 // inViendo: tarjeta de la sección "Viendo" (sin título del capítulo y con temporadas restantes)
@@ -1727,15 +1731,23 @@ function allWatchedEvents(cutoff){
   movies.forEach(m=>{ if(m.watched && m.watchedAt && m.watchedAt>=cutoff) out.push({watchedAt:m.watchedAt, minutes:m.runtime||100}); });
   return out;
 }
+// Ritmo (min/día) de una serie: ventana = desde el primer capítulo visto, con máximo de 6 meses
+function seriesPace(s){
+  const dated = flatEpisodes(s).filter(e=>e.watched && e.watchedAt);
+  if(!dated.length) return null;
+  const now = Date.now();
+  const start = Math.min(...dated.map(e=>e.watchedAt));
+  const windowStart = Math.max(start, now-182*86400000);
+  const days = Math.max(1, (now-windowStart)/86400000);
+  const mins = dated.filter(e=>e.watchedAt>=windowStart).reduce((a,e)=>a+(e.runtime||30),0);
+  return mins>0 ? mins/days : null;
+}
 function forecastFor(s){
-  const cutoff = Date.now()-182*86400000;
-  const watched6m = flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cutoff);
-  const minutesWatched = watched6m.reduce((a,e)=>a+(e.runtime||30),0);
   const remaining = airedEpisodes(s).filter(e=>!e.watched);
   const minutesRemaining = remaining.reduce((a,e)=>a+(e.runtime||30),0);
-  if(watched6m.length===0 || minutesWatched===0) return {days:null, episodesRemaining:remaining.length, minutesRemaining};
-  const days = minutesRemaining / (minutesWatched/182);
-  return {days, episodesRemaining:remaining.length, minutesRemaining};
+  const pace = seriesPace(s);
+  if(!pace) return {days:null, episodesRemaining:remaining.length, minutesRemaining};
+  return {days:minutesRemaining/pace, episodesRemaining:remaining.length, minutesRemaining};
 }
 // Duración en meses / días / horas (a partir de 24 h pasa a días, a partir de 30 días a meses)
 function fmtDurationMin(totalMin){
@@ -1885,15 +1897,12 @@ function renderPerfil(){
   const viendoList = viendoOrdered();
   const forecasts = viendoList.map(s=>({s,f:forecastFor(s)}));
   const totalEpsLeft = forecasts.reduce((a,x)=>a+x.f.episodesRemaining,0);
-  let jointMinutesWatched=0, jointMinutesRemaining=0;
-  const cut6 = Date.now()-182*86400000;
-  series.forEach(s=>{
-    jointMinutesWatched += flatEpisodes(s).filter(e=>e.watched && e.watchedAt && e.watchedAt>=cut6).reduce((a,e)=>a+(e.runtime||30),0);
-  });
+  let jointPace=0, jointMinutesRemaining=0;
+  series.forEach(s=>{ const pc = seriesPace(s); if(pc) jointPace += pc; });
   viendoList.forEach(s=>{
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });
-  const jointForecast = jointMinutesWatched>0 ? jointMinutesRemaining/(jointMinutesWatched/182) : null;
+  const jointForecast = jointPace>0 ? jointMinutesRemaining/jointPace : null;
 
   let html = `<div class="profile-head"><div class="avatar" id="avatarBtn">${profile.avatar? esc(profile.avatar) : esc((profile.name||'?')[0].toUpperCase())}</div>
     <div><div class="profile-name" id="nameBtn">${esc(profile.name)}</div><div style="font-size:0.68rem;color:var(--ink-soft);">Toca para editar</div></div></div>`;
