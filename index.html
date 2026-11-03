@@ -1731,16 +1731,21 @@ function allWatchedEvents(cutoff){
   movies.forEach(m=>{ if(m.watched && m.watchedAt && m.watchedAt>=cutoff) out.push({watchedAt:m.watchedAt, minutes:m.runtime||100}); });
   return out;
 }
-// Ritmo (min/día) de una serie: ventana = desde el primer capítulo visto, con máximo de 6 meses
+// Minutos al día que ves (todas las series) en los últimos N días
+function dailyPace(days){
+  const from = Date.now()-days*86400000;
+  let mins = 0;
+  series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && e.watchedAt && e.watchedAt>=from) mins += (e.runtime||30); }));
+  return mins/days;
+}
+// Ritmo para prever una serie: ventana = desde que empezaste a verla, con máximo de 6 meses
 function seriesPace(s){
   const dated = flatEpisodes(s).filter(e=>e.watched && e.watchedAt);
   if(!dated.length) return null;
-  const now = Date.now();
   const start = Math.min(...dated.map(e=>e.watchedAt));
-  const windowStart = Math.max(start, now-182*86400000);
-  const days = Math.max(1, (now-windowStart)/86400000);
-  const mins = dated.filter(e=>e.watchedAt>=windowStart).reduce((a,e)=>a+(e.runtime||30),0);
-  return mins>0 ? mins/days : null;
+  const days = Math.min(182, Math.max(1, (Date.now()-start)/86400000));
+  const p = dailyPace(days);
+  return p>0 ? p : null;
 }
 function forecastFor(s){
   const remaining = airedEpisodes(s).filter(e=>!e.watched);
@@ -1898,7 +1903,7 @@ function renderPerfil(){
   const forecasts = viendoList.map(s=>({s,f:forecastFor(s)}));
   const totalEpsLeft = forecasts.reduce((a,x)=>a+x.f.episodesRemaining,0);
   let jointPace=0, jointMinutesRemaining=0;
-  series.forEach(s=>{ const pc = seriesPace(s); if(pc) jointPace += pc; });
+  jointPace = dailyPace(182);
   viendoList.forEach(s=>{
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });
