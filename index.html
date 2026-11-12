@@ -1738,21 +1738,46 @@ function dailyPace(days){
   series.forEach(s=> flatEpisodes(s).forEach(e=>{ if(e.watched && e.watchedAt && e.watchedAt>=from) mins += (e.runtime||30); }));
   return mins/days;
 }
-// Ritmo para prever una serie: ventana = desde que empezaste a verla, con máximo de 6 meses
-function seriesPace(s){
+// Ritmo propio de una serie (min/día): lo visto de ESA serie desde que la empezaste, con máximo de 6 meses
+function ownPace(s){
   const dated = flatEpisodes(s).filter(e=>e.watched && e.watchedAt);
   if(!dated.length) return null;
   const start = Math.min(...dated.map(e=>e.watchedAt));
   const days = Math.min(182, Math.max(1, (Date.now()-start)/86400000));
-  const p = dailyPace(days);
-  return p>0 ? p : null;
+  const from = Date.now()-days*86400000;
+  const mins = dated.filter(e=>e.watchedAt>=from).reduce((a,e)=>a+(e.runtime||30),0);
+  return mins>0 ? mins/days : null;
 }
-function forecastFor(s){
-  const remaining = airedEpisodes(s).filter(e=>!e.watched);
-  const minutesRemaining = remaining.reduce((a,e)=>a+(e.runtime||30),0);
-  const pace = seriesPace(s);
-  if(!pace) return {days:null, episodesRemaining:remaining.length, minutesRemaining};
-  return {days:minutesRemaining/pace, episodesRemaining:remaining.length, minutesRemaining};
+// Simulación: cada serie avanza a su ritmo; al terminar una, su ritmo se reparte entre las que quedan
+// en proporción al ritmo de cada una. Devuelve días hasta el fin de cada serie.
+function simulateQueue(items){
+  let list = items.map(x=>({id:x.id, left:x.rem, pace:x.pace}));
+  const out = new Map(); let t = 0, guard = 0;
+  while(list.length && guard++<1000){
+    let dt = Infinity;
+    list.forEach(x=>{ dt = Math.min(dt, x.left<=0 ? 0 : x.left/x.pace); });
+    t += dt;
+    list.forEach(x=>{ x.left -= x.pace*dt; });
+    const done = list.filter(x=>x.left<=1e-6);
+    done.forEach(x=>out.set(x.id, t));
+    list = list.filter(x=>x.left>1e-6);
+    const freed = done.reduce((a,x)=>a+x.pace,0);
+    const rest = list.reduce((a,x)=>a+x.pace,0);
+    if(rest>0) list.forEach(x=>{ x.pace += freed*x.pace/rest; });
+    if(!done.length) break;
+  }
+  return out;
+}
+function viendoForecasts(list, otherPaces){
+  const info = list.map(s=>{
+    const rem = airedEpisodes(s).filter(e=>!e.watched);
+    return {s, episodesRemaining:rem.length, minutesRemaining:rem.reduce((a,e)=>a+(e.runtime||30),0), pace:ownPace(s)};
+  });
+  // Series ya acabadas (o sin nada por ver) entran con 0 min restantes: su ritmo se reparte desde el principio
+  const extra = (otherPaces||[]).map((p,i)=>({id:'fin'+i, rem:0, pace:p}));
+  const sim = simulateQueue(info.filter(x=>x.pace>0).map(x=>({id:x.s.id, rem:x.minutesRemaining, pace:x.pace})).concat(extra));
+  info.forEach(x=>{ x.days = x.pace>0 && sim.has(x.s.id) ? sim.get(x.s.id) : null; });
+  return info;
 }
 // Duración en meses / días / horas (a partir de 24 h pasa a días, a partir de 30 días a meses)
 function fmtDurationMin(totalMin){
@@ -1900,14 +1925,21 @@ function renderPerfil(){
   }
 
   const viendoList = viendoOrdered();
-  const forecasts = viendoList.map(s=>({s,f:forecastFor(s)}));
+  const viendoIds = new Set(viendoList.map(s=>s.id));
+  const otherPaces = series.filter(s=>!viendoIds.has(s.id)).map(ownPace).filter(p=>p>0);
+  const forecasts = viendoForecasts(viendoList, otherPaces).map(x=>({s:x.s, f:x}));
   const totalEpsLeft = forecasts.reduce((a,x)=>a+x.f.episodesRemaining,0);
   let jointPace=0, jointMinutesRemaining=0;
-  jointPace = dailyPace(182);
+  series.forEach(s=>{ const pc = ownPace(s); if(pc) jointPace += pc; });
   viendoList.forEach(s=>{
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });
   const jointForecast = jointPace>0 ? jointMinutesRemaining/jointPace : null;
+  // Todas las pendientes: Viendo + Sin comenzar (se suma también lo de series sin datos de ritmo)
+  const sinComenzarList = series.filter(s=>s._status==='sin_comenzar');
+  let pendEps = totalEpsLeft, pendMinutes = jointMinutesRemaining;
+  sinComenzarList.forEach(s=>{ const r = airedEpisodes(s).filter(e=>!e.watched); pendEps += r.length; pendMinutes += r.reduce((a,e)=>a+(e.runtime||30),0); });
+  const pendForecast = jointPace>0 ? pendMinutes/jointPace : null;
 
   let html = `<div class="profile-head"><div class="avatar" id="avatarBtn">${profile.avatar? esc(profile.avatar) : esc((profile.name||'?')[0].toUpperCase())}</div>
     <div><div class="profile-name" id="nameBtn">${esc(profile.name)}</div><div style="font-size:0.68rem;color:var(--ink-soft);">Toca para editar</div></div></div>`;
@@ -1941,6 +1973,7 @@ function renderPerfil(){
 
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
   html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div><div class="subvalue">${fmtFull(jointMinutesRemaining)} restantes</div></div>`;
+  html += `<div class="stat-card"><div class="label">Todas las series pendientes</div><div class="value">${pendForecast!==null? endDateStr(pendForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${pendEps} capítulo${pendEps===1?'':'s'} restante${pendEps===1?'':'s'} · Viendo y sin comenzar</div><div class="subvalue">${fmtFull(pendMinutes)} restantes</div></div>`;
   if(forecasts.length){
     html += `<div class="stat-card">` + forecasts.map(({s,f})=>{
       const n = f.episodesRemaining;
