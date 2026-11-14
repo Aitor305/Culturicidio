@@ -1748,35 +1748,13 @@ function ownPace(s){
   const mins = dated.filter(e=>e.watchedAt>=from).reduce((a,e)=>a+(e.runtime||30),0);
   return mins>0 ? mins/days : null;
 }
-// Simulación: cada serie avanza a su ritmo; al terminar una, su ritmo se reparte entre las que quedan
-// en proporción al ritmo de cada una. Devuelve días hasta el fin de cada serie.
-function simulateQueue(items){
-  let list = items.map(x=>({id:x.id, left:x.rem, pace:x.pace}));
-  const out = new Map(); let t = 0, guard = 0;
-  while(list.length && guard++<1000){
-    let dt = Infinity;
-    list.forEach(x=>{ dt = Math.min(dt, x.left<=0 ? 0 : x.left/x.pace); });
-    t += dt;
-    list.forEach(x=>{ x.left -= x.pace*dt; });
-    const done = list.filter(x=>x.left<=1e-6);
-    done.forEach(x=>out.set(x.id, t));
-    list = list.filter(x=>x.left>1e-6);
-    const freed = done.reduce((a,x)=>a+x.pace,0);
-    const rest = list.reduce((a,x)=>a+x.pace,0);
-    if(rest>0) list.forEach(x=>{ x.pace += freed*x.pace/rest; });
-    if(!done.length) break;
-  }
-  return out;
-}
-function viendoForecasts(list, otherPaces){
+function viendoForecasts(list){
   const info = list.map(s=>{
     const rem = airedEpisodes(s).filter(e=>!e.watched);
     return {s, episodesRemaining:rem.length, minutesRemaining:rem.reduce((a,e)=>a+(e.runtime||30),0), pace:ownPace(s)};
   });
-  // Series ya acabadas (o sin nada por ver) entran con 0 min restantes: su ritmo se reparte desde el principio
-  const extra = (otherPaces||[]).map((p,i)=>({id:'fin'+i, rem:0, pace:p}));
-  const sim = simulateQueue(info.filter(x=>x.pace>0).map(x=>({id:x.s.id, rem:x.minutesRemaining, pace:x.pace})).concat(extra));
-  info.forEach(x=>{ x.days = x.pace>0 && sim.has(x.s.id) ? sim.get(x.s.id) : null; });
+  // Cada serie con su propio ritmo; sin reparto al terminar otras series
+  info.forEach(x=>{ x.days = x.pace>0 ? x.minutesRemaining/x.pace : null; });
   return info;
 }
 // Duración en meses / días / horas (a partir de 24 h pasa a días, a partir de 30 días a meses)
@@ -1925,12 +1903,10 @@ function renderPerfil(){
   }
 
   const viendoList = viendoOrdered();
-  const viendoIds = new Set(viendoList.map(s=>s.id));
-  const otherPaces = series.filter(s=>!viendoIds.has(s.id)).map(ownPace).filter(p=>p>0);
-  const forecasts = viendoForecasts(viendoList, otherPaces).map(x=>({s:x.s, f:x}));
+  const forecasts = viendoForecasts(viendoList).map(x=>({s:x.s, f:x}));
   const totalEpsLeft = forecasts.reduce((a,x)=>a+x.f.episodesRemaining,0);
   let jointPace=0, jointMinutesRemaining=0;
-  series.forEach(s=>{ const pc = ownPace(s); if(pc) jointPace += pc; });
+  jointPace = dailyPace(182);   // minutos al día vistos (todas las series) en los últimos 6 meses
   viendoList.forEach(s=>{
     jointMinutesRemaining += airedEpisodes(s).filter(e=>!e.watched).reduce((a,e)=>a+(e.runtime||30),0);
   });

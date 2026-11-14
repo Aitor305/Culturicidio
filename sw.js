@@ -1,4 +1,4 @@
-const CACHE = 'fichero-v37';
+const CACHE = 'fichero-v38';
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html'])));
