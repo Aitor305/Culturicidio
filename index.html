@@ -125,6 +125,15 @@ main{padding:1rem;}
 .chip-seasons.st-ended{--st:#FF4D4D;}
 .chip-seasons.st-unknown{--st:#FFB000;}
 .chip-seasons.st-known{--st:#3DDC84;}
+.rate-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:0.4rem;margin-top:0.8rem;}
+.rate-chip{font-family:'Poppins',sans-serif;font-size:0.85rem;padding:0.55rem 0;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);cursor:pointer;}
+.rate-chip.sel{background:var(--mustard);color:#100C08;border-color:var(--mustard);font-weight:600;}
+.rating-box{margin-top:0.8rem;padding-top:0.6rem;border-top:1px solid var(--hair);font-size:0.8rem;}
+.rating-head{display:flex;justify-content:space-between;gap:0.6rem;color:var(--ink);}
+.rating-head span{color:var(--mustard);font-weight:600;}
+.rating-opinion{font-size:0.75rem;color:var(--ink-soft);line-height:1.5;margin:0.3rem 0 0;font-style:italic;}
+.season-rate{display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.5rem 0;font-size:0.74rem;color:var(--ink-soft);border-bottom:1px solid var(--hair);}
+.season-rate b{color:var(--mustard);}
 .ep-pane-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:0.92rem;color:var(--ink);margin-bottom:0.5rem;}
 .ep-row{display:flex;justify-content:space-between;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--hair);font-size:0.76rem;cursor:pointer;}
 .ep-row .name{color:var(--ink);}
@@ -264,6 +273,7 @@ async function loadAll(){
   try{ settings = (await idbGet('settings')) || settings; }catch(e){}
   recomputeAll();
   render();
+  refreshAllSeries(false);
 }
 function warnStorageFull(e){
   alert('No se ha podido guardar: el almacenamiento está lleno o no disponible.\n\nPrueba a eliminar alguna serie, peli o libro que ya no necesites, o exporta tus datos como copia de seguridad antes de seguir añadiendo más.');
@@ -337,6 +347,164 @@ function seriesStatus(s){
   if(watchedAired < aired.length) return 'en_curso';
   return 'finalizada';
 }
+/* ---------------- VALORACIONES ---------------- */
+function hasRating(o){ return !!o && typeof o.rating==='number'; }
+function askRating(o){
+  let sel = typeof o.rating==='number' ? o.rating : null;
+  const chips = [0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button type="button" class="rate-chip${sel===n?' sel':''}" data-n="${n}">${n}</button>`).join('');
+  document.getElementById('dateAskContent').innerHTML = `<h2>${o.title}</h2>
+    <div class="sheet-sub">${o.sub||''}</div>
+    <div class="rate-grid">${chips}</div>
+    <div class="field" style="margin-top:0.8rem;"><textarea id="rateOpinion" rows="3" placeholder="Tu opinión (opcional)"></textarea></div>
+    <div class="modal-actions">${o.onRemove?'<button id="rateRemove">Quitar nota</button>':''}<button id="rateSkip">${o.skipLabel||'Ahora no'}</button><button class="primary" id="rateSave">Guardar</button></div>`;
+  document.getElementById('rateOpinion').value = o.opinion || '';
+  const saveBtn = document.getElementById('rateSave');
+  const sync = ()=>{ saveBtn.disabled = sel===null; saveBtn.style.opacity = sel===null ? '0.4' : '1'; };
+  sync();
+  document.querySelectorAll('#dateAskContent .rate-chip').forEach(c=>c.addEventListener('click', ()=>{
+    sel = parseInt(c.dataset.n);
+    document.querySelectorAll('#dateAskContent .rate-chip').forEach(x=>x.classList.toggle('sel', x===c));
+    sync();
+  }));
+  document.getElementById('dateAskOverlay').classList.add('open');
+  saveBtn.addEventListener('click', ()=>{
+    if(sel===null) return;
+    const op = document.getElementById('rateOpinion').value.trim();
+    closeDateAsk(); o.onSave(sel, op);
+  });
+  document.getElementById('rateSkip').addEventListener('click', ()=>{ closeDateAsk(); if(o.onSkip) o.onSkip(); });
+  const rm = document.getElementById('rateRemove');
+  if(rm) rm.addEventListener('click', ()=>{ closeDateAsk(); o.onRemove(); });
+}
+function runQueue(q){ if(!q.length) return; const f = q.shift(); f(()=>runQueue(q)); }
+function ratingBoxHtml(o, label, btnId, btnLabel){
+  return `<div class="rating-box"><div class="rating-head"><b>${label}</b> <span>${hasRating(o)?'★ '+o.rating+'/10':'Sin puntuar'}</span></div>${o&&o.opinion?`<p class="rating-opinion">${esc(o.opinion)}</p>`:''}<button class="soft-link" id="${btnId}" style="margin:0.3rem 0 0;">${hasRating(o)?'Editar valoración':btnLabel}</button></div>`;
+}
+// Pelis y libros
+function rateItem(kind, id, next, after){
+  const arr = kind==='movie' ? movies : books;
+  const it = arr.find(x=>x.id===id); if(!it) { if(next) next(); return; }
+  const save = kind==='movie' ? saveMovies : saveBooks;
+  const done = ()=>{ render(); if(after) after(); if(next) next(); };
+  askRating({
+    title: kind==='movie' ? '¿Qué nota le das a la peli?' : '¿Qué nota le das al libro?', sub: esc(it.title),
+    rating: it.rating, opinion: it.opinion,
+    onSave: async (r,op)=>{ it.rating = r; it.opinion = op; it.ratedAt = Date.now(); await save(); done(); },
+    onSkip: ()=>{ if(next) next(); },
+    onRemove: hasRating(it) ? async ()=>{ delete it.rating; delete it.opinion; delete it.ratedAt; await save(); done(); } : null
+  });
+}
+// Series y temporadas
+function rateSeries(sid, next, after){
+  const s = series.find(x=>x.id===sid); if(!s){ if(next) next(); return; }
+  askRating({
+    title:'¿Qué nota le das a la serie?', sub: esc(s.title), rating:s.rating, opinion:s.opinion,
+    onSave: async (r,op)=>{ s.rating = r; s.opinion = op; s.ratedAt = Date.now(); await saveSeries(); render(); if(after) after(); if(next) next(); },
+    onSkip: ()=>{ if(next) next(); },
+    onRemove: hasRating(s) ? async ()=>{ delete s.rating; delete s.opinion; delete s.ratedAt; await saveSeries(); render(); if(after) after(); if(next) next(); } : null
+  });
+}
+function rateSeason(sid, num, next, after){
+  const s = series.find(x=>x.id===sid); const sn = s && s.seasons.find(x=>x.season_number===num);
+  if(!sn){ if(next) next(); return; }
+  askRating({
+    title:'¿Qué nota le das a la temporada '+num+'?', sub: esc(s.title), rating:sn.rating, opinion:sn.opinion,
+    onSave: async (r,op)=>{ sn.rating = r; sn.opinion = op; await saveSeries(); if(after) after(); if(next) next(); },
+    onSkip: ()=>{ if(next) next(); },
+    onRemove: hasRating(sn) ? async ()=>{ delete sn.rating; delete sn.opinion; await saveSeries(); if(after) after(); if(next) next(); } : null
+  });
+}
+function completionState(s){
+  const seasons = {}; let all = (s.seasons||[]).length>0;
+  (s.seasons||[]).forEach(sn=>{ const c = sn.episodes.length>0 && sn.episodes.every(e=>e.watched); seasons[sn.season_number] = c; if(!c) all = false; });
+  const over = !s.tmdb_status || s.tmdb_status==='Ended' || s.tmdb_status==='Canceled';
+  return {seasons, series: all && over};
+}
+// Tras marcar capítulos: pide nota de la temporada recién acabada y/o de la serie
+function ratingPromptsAfter(s, before){
+  const after = completionState(s);
+  const newSeasons = Object.keys(after.seasons).filter(n=>after.seasons[n] && !before.seasons[n]).map(Number);
+  const seriesDone = after.series && !before.series;
+  const q = [];
+  if(newSeasons.length===1){
+    const sn = s.seasons.find(x=>x.season_number===newSeasons[0]);
+    if(!hasRating(sn)) q.push(next=>rateSeason(s.id, newSeasons[0], next));
+  }
+  if(seriesDone && !hasRating(s)) q.push(next=>rateSeries(s.id, next));
+  runQueue(q);
+}
+function seasonRatingHtml(sn){
+  return `<div class="season-rate"><span>${hasRating(sn)?'Nota de la temporada: <b>★ '+sn.rating+'/10</b>':'Temporada sin puntuar'}</span><button class="soft-link season-rate-btn" data-season="${sn.season_number}" style="margin:0;">${hasRating(sn)?'Editar':'Valorar'}</button></div>${sn.opinion?`<p class="rating-opinion">${esc(sn.opinion)}</p>`:''}`;
+}
+function bindSeriesRating(sid){
+  const b = document.getElementById('rateSeriesBtn');
+  if(b) b.onclick = ()=>rateSeries(sid, null, ()=>{
+    const blk = document.getElementById('seriesRatingBlock'); const s = series.find(x=>x.id===sid);
+    if(blk && s){ blk.innerHTML = ratingBoxHtml(s, 'Tu nota de la serie', 'rateSeriesBtn', 'Valorar serie'); bindSeriesRating(sid); }
+  });
+}
+
+/* ---------------- ACTUALIZAR SERIES DESDE TMDB ---------------- */
+// Las series guardan una copia de sus temporadas/capítulos; esto la pone al día
+// (capítulos nuevos, fechas de estreno cambiadas, temporadas nuevas, estado) sin tocar lo que ya viste.
+let refreshRunning = false;
+async function refreshSeriesFromTmdb(s){
+  const d = await tmdbTvDetail(s.tmdbId);
+  const today = todayISO();
+  let changed = false;
+  const remoteSeasons = (d.seasons||[]).filter(x=>x.season_number>0);
+  const lastNum = remoteSeasons.reduce((m,x)=>Math.max(m,x.season_number),0);
+  const rtDefault = (d.episode_run_time && d.episode_run_time[0]) || 30;
+  for(const rs of remoteSeasons){
+    let ls = s.seasons.find(x=>x.season_number===rs.season_number);
+    const needs = !ls || ls.episodes.length!==rs.episode_count || rs.season_number===lastNum
+      || ls.episodes.some(e=>!e.air_date || e.air_date>=today);
+    if(!needs) continue;
+    const sd = await tmdbSeason(s.tmdbId, rs.season_number);
+    const eps = sd.episodes || [];
+    if(!ls){ ls = {season_number:rs.season_number, episodes:[]}; s.seasons.push(ls); changed = true; }
+    eps.forEach(e=>{
+      const le = ls.episodes.find(x=>x.episode_number===e.episode_number);
+      const nv = {name:e.name, overview:e.overview || (le&&le.overview) || '', air_date:e.air_date || null, runtime:e.runtime || (le&&le.runtime) || rtDefault};
+      if(!le){ ls.episodes.push(Object.assign({episode_number:e.episode_number, watched:false, watchedAt:null}, nv)); changed = true; }
+      else Object.keys(nv).forEach(k=>{ if(le[k]!==nv[k]){ le[k] = nv[k]; changed = true; } });
+    });
+    if(eps.length){
+      const remoteNums = new Set(eps.map(e=>e.episode_number));
+      const before = ls.episodes.length;
+      ls.episodes = ls.episodes.filter(e=> e.watched || remoteNums.has(e.episode_number));
+      if(ls.episodes.length!==before) changed = true;
+    }
+    ls.episodes.sort((a,b)=>a.episode_number-b.episode_number);
+  }
+  s.seasons.sort((a,b)=>a.season_number-b.season_number);
+  if(d.status && s.tmdb_status!==d.status){ s.tmdb_status = d.status; changed = true; }
+  if(!s.poster && d.poster_path){ s.poster = IMG+d.poster_path; changed = true; }
+  s.checkedAt = Date.now();
+  return changed;
+}
+function seriesNeedsRefresh(s){
+  if(!s.tmdbId) return false;
+  const ended = s.tmdb_status==='Ended' || s.tmdb_status==='Canceled';
+  return !s.checkedAt || Date.now()-s.checkedAt > (ended ? 30*86400000 : 6*3600000);
+}
+async function refreshAllSeries(force){
+  if(refreshRunning || !settings.tmdbKey) return null;
+  const todo = series.filter(s=> s.tmdbId && (force || seriesNeedsRefresh(s)));
+  if(!todo.length) return {checked:0, updated:0};
+  refreshRunning = true;
+  let updated = 0, checked = 0;
+  for(let i=0;i<todo.length;i+=3){
+    const res = await Promise.all(todo.slice(i,i+3).map(s=>refreshSeriesFromTmdb(s).then(ch=>{ checked++; return ch; }).catch(()=>false)));
+    updated += res.filter(Boolean).length;
+  }
+  refreshRunning = false;
+  recomputeAll();
+  await saveSeries();
+  if(updated) render();
+  return {checked, updated};
+}
+
 function recomputeAll(){
   series.forEach(s=>{
     const status = seriesStatus(s);
@@ -358,16 +526,19 @@ async function markEpisodeWatched(seriesId, seasonNum, epNum){
   const s = series.find(x=>x.id===seriesId); if(!s) return;
   const season = s.seasons.find(sn=>sn.season_number===seasonNum); if(!season) return;
   const ep = season.episodes.find(e=>e.episode_number===epNum); if(!ep) return;
+  const before = completionState(s);
   ep.watched = true; ep.watchedAt = Date.now();
   clearAllPins();
   recomputeAll();
   await saveSeries();
   render();
+  ratingPromptsAfter(s, before);
 }
 async function markWatchedThrough(seriesId, seasonNum, epNum, atValue){
   const s = series.find(x=>x.id===seriesId); if(!s) return;
   const target = flatEpisodes(s).find(e=>e.season_number===seasonNum && e.episode_number===epNum);
   if(!target) return;
+  const before = completionState(s);
   const useNow = atValue===undefined;
   const base = useNow ? Date.now() : atValue;
   let offset = 0;
@@ -386,6 +557,7 @@ async function markWatchedThrough(seriesId, seasonNum, epNum, atValue){
   recomputeAll();
   await saveSeries();
   render();
+  ratingPromptsAfter(s, before);
 }
 async function unmarkEpisodeWatched(seriesId, seasonNum, epNum){
   const s = series.find(x=>x.id===seriesId); if(!s) return;
@@ -428,11 +600,13 @@ async function markMovieWatchedAt(movieId, ts){
   const m = movies.find(x=>x.id===movieId); if(!m) return;
   m.watched = true; m.watchedAt = ts;
   await saveMovies(); closeSheet(); render();
+  if(!hasRating(m)) rateItem('movie', movieId);
 }
 async function markBookReadAt(bookId, ts){
   const b = books.find(x=>x.id===bookId); if(!b) return;
   b.watched = true; b.watchedAt = ts;
   await saveBooks(); closeSheet(); render();
+  if(!hasRating(b)) rateItem('book', bookId);
 }
 async function deleteMovie(movieId){
   movies = movies.filter(m=>m.id!==movieId);
@@ -451,12 +625,14 @@ async function markMovieWatched(movieId){
   m.watched = true; m.watchedAt = Date.now();
   await saveMovies();
   render();
+  if(!hasRating(m)) rateItem('movie', movieId);
 }
 async function markBookRead(bookId){
   const b = books.find(x=>x.id===bookId); if(!b) return;
   b.watched = true; b.watchedAt = Date.now();
   await saveBooks();
   render();
+  if(!hasRating(b)) rateItem('book', bookId);
 }
 async function unmarkMovieWatched(movieId){
   const m = movies.find(x=>x.id===movieId); if(!m) return;
@@ -905,6 +1081,7 @@ function openEpisodeDetail(sid, seasonNum, epNum){
       <p>${esc(s.overview)}</p>
       ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
       ${runtimeSummary(s.seasons)}
+      <div id="seriesRatingBlock">${ratingBoxHtml(s, 'Tu nota de la serie', 'rateSeriesBtn', 'Valorar serie')}</div>
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <div class="section-label">¿Dónde se puede ver?</div>
       <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">${s.tmdbId?'Cargando…':'Sin datos (serie añadida a mano).'}</p></div>
@@ -936,8 +1113,9 @@ function seasonsHtml(s){
     const open = expandedSeasons.has(season.season_number);
     return `
     <div class="season-block${open?' open':''}" data-season="${season.season_number}">
-      <div class="season-head"><div class="season-title">Temporada ${season.season_number}</div><div class="season-meta">${n} capítulo${n===1?'':'s'}${seen?' · '+seen+' visto'+(seen===1?'':'s'):''}<i class="ti ti-chevron-down chev"></i></div></div>
+      <div class="season-head"><div class="season-title">Temporada ${season.season_number}</div><div class="season-meta">${n} capítulo${n===1?'':'s'}${seen?' · '+seen+' visto'+(seen===1?'':'s'):''}${hasRating(season)?' · ★ '+season.rating:''}<i class="ti ti-chevron-down chev"></i></div></div>
       <div class="season-eps">
+      ${seen?seasonRatingHtml(season):''}
       ${season.episodes.map(e=>`<div class="ep-row" data-season="${season.season_number}" data-ep="${e.episode_number}">
         <span class="name">E${e.episode_number} ${esc(e.name)}</span>
         ${e.watched
@@ -949,6 +1127,8 @@ function seasonsHtml(s){
   }).join('');
 }
 function bindSeasonButtons(sid){
+  bindSeriesRating(sid);
+  document.querySelectorAll('#pane-seasons .season-rate-btn').forEach(b=>b.addEventListener('click', ev=>{ ev.stopPropagation(); rateSeason(sid, parseInt(b.dataset.season), null, ()=>refreshSeasonsPane(sid)); }));
   document.querySelectorAll('#pane-seasons .season-head').forEach(h=>h.addEventListener('click', ()=>toggleSeasonBlock(h)));
   document.querySelectorAll('#pane-seasons .ep-row').forEach(r=>r.addEventListener('click', ()=>showEpisodeInSheet(sid, parseInt(r.dataset.season), parseInt(r.dataset.ep))));
   document.querySelectorAll('.ep-row-watch').forEach(b=>{
@@ -1009,6 +1189,7 @@ function openSeriesFinalDetail(sid){
       <p>${esc(s.overview)}</p>
       ${s.tmdb_status?`<p style="font-size:0.72rem;margin-top:0.4rem;">Estado: ${statusEs(s.tmdb_status)}</p>`:''}
       ${runtimeSummary(s.seasons)}
+      <div id="seriesRatingBlock">${ratingBoxHtml(s, 'Tu nota de la serie', 'rateSeriesBtn', 'Valorar serie')}</div>
       <p style="margin-top:0.6rem;"><b style="color:var(--ink);">Reparto:</b><br>${(s.cast||[]).map(esc).join('<br>')}</p>
       <div class="section-label">¿Dónde se puede ver?</div>
       <div id="providersBlock"><p style="font-size:0.75rem;color:var(--ink-soft);">${s.tmdbId?'Cargando…':'Sin datos (serie añadida a mano).'}</p></div>
@@ -1040,7 +1221,7 @@ function renderPelisTab(){
       <img class="poster" src="${m.poster}" onerror="this.style.background='var(--line)'">
       <div class="ep-info">
         <div class="ep-title">${esc(m.title)}</div>
-        <div class="ep-date">${pelisSub==='pendientes' ? 'Estreno '+fmtDate(m.releaseDate) : (m.watchedAt?'Vista '+fmtDate(m.watchedAt):'Vista · fecha desconocida')}</div>
+        <div class="ep-date">${pelisSub==='pendientes' ? 'Estreno '+fmtDate(m.releaseDate) : (m.watchedAt?'Vista '+fmtDate(m.watchedAt):'Vista · fecha desconocida')+(hasRating(m)?' · ★ '+m.rating:'')}</div>
       </div>
       ${pelisSub==='pendientes' ? `<button class="watch-btn" data-action="watch" title="Marcar como vista"><i class="ti ti-check"></i></button>`:''}
     </div>`).join('');
@@ -1065,6 +1246,7 @@ function openMovieDetail(mid){
     ${!m.watched
       ? `<button class="add-cta" id="mvWatchBtn">Marcar como vista</button><button class="soft-link" id="mvSeenBtn">Ya la vi…</button>`
       : `<p style="font-size:0.75rem;color:var(--teal-dark);margin-top:0.6rem;">${m.watchedAt?'Vista el '+fmtDate(m.watchedAt):'Vista (fecha desconocida)'}</p>
+         ${ratingBoxHtml(m, 'Tu nota', 'rateMovieBtn', 'Puntuar')}
          <button class="add-cta" id="mvUnwatchBtn" style="background:transparent;border:1px solid var(--line);color:var(--ink-soft);">Marcar como no vista</button>`}
     <button class="add-cta" id="deleteMovieBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar peli</button>`;
   openSheet(html);
@@ -1072,6 +1254,8 @@ function openMovieDetail(mid){
   if(b) b.addEventListener('click', ()=>{ markMovieWatched(mid); closeSheet(); });
   const sb = document.getElementById('mvSeenBtn');
   if(sb) sb.addEventListener('click', ()=>askWhen('¿Cuándo la viste?','Se marcará como vista', ts=>markMovieWatchedAt(mid, ts)));
+  const rmb = document.getElementById('rateMovieBtn');
+  if(rmb) rmb.addEventListener('click', ()=>rateItem('movie', mid, null, ()=>openMovieDetail(mid)));
   const ub = document.getElementById('mvUnwatchBtn');
   if(ub) ub.addEventListener('click', ()=>{ unmarkMovieWatched(mid); closeSheet(); });
   document.getElementById('deleteMovieBtn').addEventListener('click', ()=>deleteMovie(mid));
@@ -1096,7 +1280,7 @@ function renderBibliotecaTab(){
       <div class="ep-info">
         <div class="ep-title">${esc(b.title)}</div>
         <div class="ep-sub">${esc(b.author||'')}</div>
-        <div class="ep-date">${bibliotecaSub==='pendientes' ? (b.publishedDate?'Publicado '+fmtDate(b.publishedDate):'') : (b.watchedAt?'Leído '+fmtDate(b.watchedAt):'Leído · fecha desconocida')}</div>
+        <div class="ep-date">${bibliotecaSub==='pendientes' ? (b.publishedDate?'Publicado '+fmtDate(b.publishedDate):'') : (b.watchedAt?'Leído '+fmtDate(b.watchedAt):'Leído · fecha desconocida')+(hasRating(b)?' · ★ '+b.rating:'')}</div>
       </div>
       ${bibliotecaSub==='pendientes' ? `<button class="watch-btn" data-action="watch" title="Marcar como leído"><i class="ti ti-check"></i></button>`:''}
     </div>`).join('');
@@ -1117,6 +1301,7 @@ function openBookDetail(bid){
     ${!b.watched
       ? `<button class="add-cta" id="bkWatchBtn">Marcar como leído</button><button class="soft-link" id="bkSeenBtn">Ya lo leí…</button>`
       : `<p style="font-size:0.75rem;color:var(--teal-dark);margin-top:0.6rem;">${b.watchedAt?'Leído el '+fmtDate(b.watchedAt):'Leído (fecha desconocida)'}</p>
+         ${ratingBoxHtml(b, 'Tu nota', 'rateBookBtn', 'Puntuar')}
          <button class="add-cta" id="bkUnwatchBtn" style="background:transparent;border:1px solid var(--line);color:var(--ink-soft);">Marcar como no leído</button>`}
     <button class="add-cta" id="deleteBookBtn" style="margin-top:1rem;background:transparent;border:1px solid var(--rust-dark);color:var(--rust-dark);">Eliminar libro</button>`;
   openSheet(html);
@@ -1124,6 +1309,8 @@ function openBookDetail(bid){
   if(btn) btn.addEventListener('click', ()=>{ markBookRead(bid); closeSheet(); });
   const sbtn = document.getElementById('bkSeenBtn');
   if(sbtn) sbtn.addEventListener('click', ()=>askWhen('¿Cuándo lo leíste?','Se marcará como leído', ts=>markBookReadAt(bid, ts)));
+  const rbb = document.getElementById('rateBookBtn');
+  if(rbb) rbb.addEventListener('click', ()=>rateItem('book', bid, null, ()=>openBookDetail(bid)));
   const ubtn = document.getElementById('bkUnwatchBtn');
   if(ubtn) ubtn.addEventListener('click', ()=>{ unmarkBookRead(bid); closeSheet(); });
   document.getElementById('deleteBookBtn').addEventListener('click', ()=>deleteBook(bid));
@@ -1947,6 +2134,12 @@ function renderPerfil(){
   html += marathonCard();
   html += `<div class="chart-note">Mayor tiempo visto de cada serie en cualquier periodo de 24 horas. Los capítulos marcados de golpe con una fecha cuentan como vistos seguidos.</div>`;
 
+  html += `<div class="section-label">Top 10 series</div>`;
+  const topRated = series.filter(hasRating).sort((a,b)=> b.rating-a.rating || (b.ratedAt||0)-(a.ratedAt||0)).slice(0,10);
+  html += topRated.length
+    ? `<div class="stat-card">` + topRated.map((s,i)=>`<div class="forecast-item"><div class="fc-left"><b>${i+1}. ${esc(s.title)}</b></div><div class="fc-right">★ ${s.rating}/10</div></div>`).join('') + `</div>`
+    : `<div class="stat-card"><div class="subvalue">Aún no has puntuado ninguna serie.</div></div>`;
+
   html += `<div class="section-label">Previsión (últimos 6 meses, fija)</div>`;
   html += `<div class="stat-card"><div class="label">Todas las series que estoy viendo</div><div class="value">${jointForecast!==null? endDateStr(jointForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${totalEpsLeft} capítulo${totalEpsLeft===1?'':'s'} restante${totalEpsLeft===1?'':'s'}</div><div class="subvalue">${fmtFull(jointMinutesRemaining)} restantes</div></div>`;
   html += `<div class="stat-card"><div class="label">Todas las series pendientes</div><div class="value">${pendForecast!==null? endDateStr(pendForecast) : 'Sin datos suficientes'}</div><div class="subvalue">${pendEps} capítulo${pendEps===1?'':'s'} restante${pendEps===1?'':'s'} · Viendo y sin comenzar</div><div class="subvalue">${fmtFull(pendMinutes)} restantes</div></div>`;
@@ -1958,6 +2151,8 @@ function renderPerfil(){
     }).join('') + `</div>`;
   }
 
+  html += `<div class="section-label">Actualizar series</div>`;
+  html += `<div class="stat-card"><div class="subvalue">Las series se ponen al día solas al abrir la app (capítulos nuevos, fechas de estreno, temporadas). Si quieres, puedes forzarlo ahora.</div><button class="add-cta" id="refreshBtn" style="margin-top:0.6rem;">Buscar capítulos nuevos</button></div>`;
   html += `<div class="section-label">Copia de seguridad</div>`;
   html += `<div class="stat-card"><div class="label">Espacio usado</div><div class="value">${storageUsageKB()} KB</div><div class="subvalue">Guardado con bastante margen disponible en tu móvil.</div></div>`;
   html += `<div class="stat-card">
@@ -1971,6 +2166,14 @@ function renderPerfil(){
   document.querySelectorAll('.period-chip').forEach(b=>b.addEventListener('click', ()=>{ statPeriod=b.dataset.p; renderPerfil(); }));
   document.getElementById('avatarBtn').addEventListener('click', editProfile);
   document.getElementById('nameBtn').addEventListener('click', editProfile);
+  document.getElementById('refreshBtn').addEventListener('click', async ()=>{
+    const b = document.getElementById('refreshBtn');
+    if(!settings.tmdbKey){ alert('Necesitas la clave de TMDB para actualizar las series.'); return; }
+    b.textContent = 'Buscando…'; b.disabled = true;
+    const r = await refreshAllSeries(true);
+    if(r) alert('Series revisadas: '+r.checked+'\nCon novedades: '+r.updated);
+    if(activeTab==='perfil') renderPerfil();
+  });
   document.getElementById('exportBtn').addEventListener('click', exportData);
   document.getElementById('importBtn').addEventListener('click', ()=>document.getElementById('importFile').click());
   document.getElementById('importFile').addEventListener('change', importData);
